@@ -1,815 +1,193 @@
-# Phishing Detector AI - Browser Extension
+# Phishing Detector AI
 
-An AI-powered phishing detection system using Google Gemini API to analyze emails, SMS messages, URLs, and chat messages for phishing indicators. This project includes a Python backend API and a Chrome/Firefox browser extension for real-time phishing detection.
+A privacy-first browser extension that uses AI to flag phishing in emails, SMS, URLs, and chat messages — and a built-in assistant you can chat with (with optional neural voice). All inference runs **locally**: either **in your browser** (WebLLM/WebGPU) or via your **own local [Ollama](https://ollama.com) server**. **No cloud, no API keys.**
 
 **Course Assignment**: AI Detection | **Developer**: Brandon Newton
 
 ---
 
-## Table of Contents
-- [Quick Start](#quick-start-5-minutes)
-- [Project Overview](#project-overview)
-- [Installation & Setup](#installation--setup)
-- [Usage](#usage)
-- [How It Works](#how-it-works)
-- [Dataset Information](#dataset-information)
-- [Assignment Compliance](#assignment-compliance)
-- [Troubleshooting](#troubleshooting)
-- [API Documentation](#api-documentation)
+## What it does
+
+- **Phishing analysis** — paste (or right-click) an email/SMS/URL/chat message and get a structured verdict: `SAFE` / `SUSPICIOUS` / `HIGHLY LIKELY PHISHING`, a 0–100 risk score, red flags, an explanation, recommended action, and per-dimension indicators.
+- **PhishGuard chat** — a conversational assistant for understanding scams, with persistent local history and optional **neural voice** (Kokoro for English, Piper for ~35 other languages) plus speech-to-text input.
+- **Learns over time (RAG)** — save/correct analyses into a local example library; similar past examples are retrieved and shown to the model on future analyses. Import/export the library as JSON.
+- **Theme + settings** — light/dark/system theme, voice/language picker, and a support link.
 
 ---
 
-## Quick Start (5 Minutes)
+## Two ways to run the model
 
-### 1. Download Dataset (Optional - for evaluation only)
+| Engine | Where it runs | Needs |
+|--------|---------------|-------|
+| **In-browser** (default) | WebLLM on **WebGPU**, in the side panel | A WebGPU-capable GPU; downloads a model once (cached) |
+| **Ollama** (optional) | Your local **Ollama** server (`localhost:11434`) | Ollama installed with a model pulled; great for large/high-end local models |
 
-The phishing email dataset is required only if you want to run the quantitative evaluation script. The browser extension and API work without it.
+Either way, **content you analyze never leaves your machine**. With Ollama, the LLM runs in your own local server; embeddings (RAG) and voice still run in-browser.
 
-**Download the dataset:**
-1. Visit https://www.kaggle.com/datasets/naserabdullahalam/phishing-email-dataset
-2. Click "Download" to get the dataset archive
-3. Extract the CSV files to the `archive/` folder in the project directory
+### In-browser models
 
-Or use the Kaggle CLI:
-```bash
-kaggle datasets download -d naserabdullahalam/phishing-email-dataset
-unzip phishing-email-dataset.zip -d archive/
-```
+| Tier | Model | Download |
+|------|-------|----------|
+| **Fast** | Qwen2.5-0.5B-Instruct (q4f16_1) | ~0.9 GB |
+| **Recommended** (default) | Qwen2.5-3B-Instruct (q4f16_1) | ~2.0 GB |
+| **Maximum accuracy** | Qwen2.5-7B-Instruct (q4f16_1) | ~4.7 GB |
 
-### 2. Install Dependencies
-```bash
-pip install -r requirements.txt
-```
+### Using Ollama instead
 
-### 3. Create Extension Icons
-```bash
-cd extension/icons
-pip install pillow
-python create_icons.py
-cd ../..
-```
+1. Install Ollama and pull a model, e.g. `ollama pull qwen2.5:7b`.
+2. Allow **this extension's exact origin** (CORS) — the in-app **Advanced** card shows the precise value and a Copy button, e.g. `OLLAMA_ORIGINS="chrome-extension://<your-id>"` (narrower than `*`, so only this extension can reach Ollama).
+3. In the panel: **AI engine → Ollama** → **Refresh models** → pick one → **Connect to Ollama**.
 
-### 4. Start Backend Server
-```bash
-python api_server.py
-```
-Leave this terminal window open. You should see: `Starting Phishing Detection API server on localhost:8080`
-
-### 5. Install Browser Extension
-
-**Chrome:**
-1. Go to `chrome://extensions/`
-2. Enable "Developer mode" (top-right toggle)
-3. Click "Load unpacked"
-4. Select the `AI_Detection_6/extension` folder
-
-**Firefox:**
-1. Go to `about:debugging#/runtime/this-firefox`
-2. Click "Load Temporary Add-on"
-3. Select `AI_Detection_6/extension/manifest.json`
-
-### 6. Test It!
-1. Click the extension icon
-2. Paste this test message:
-```
-URGENT: Your PayPal account will be suspended in 24 hours!
-Click here to verify: http://paypa1.tk/verify
-Provide your credit card and SSN immediately.
-```
-3. Click "Analyze Message"
-4. You should see a "HIGHLY LIKELY PHISHING" verdict with 90+ risk score
-
-**Verification Checklist:**
-- [ ] Backend server running on port 8080
-- [ ] Extension shows green "API Connected" status
-- [ ] Test message analyzed successfully
-- [ ] Detailed results with red flags displayed
+> Chat messages are tagged with which engine + exact model produced them (see *Forensic provenance* below), and external (Ollama) responses are clearly badged.
 
 ---
 
-## Project Overview
+## Build & install
 
-This project was developed as part of an AI Detection course assignment to create a phishing detection system leveraging generative AI for defensive security purposes.
-
-### Key Features
-
-- **AI-Powered Analysis**: Uses Google Gemini 2.5 Flash model for intelligent phishing detection
-- **Browser Extension**: Chrome/Firefox extension with intuitive popup interface
-- **Multi-Format Support**: Analyzes emails, SMS, URLs, and chat messages
-- **Comprehensive Analysis**: Evaluates 5+ phishing indicators with detailed explanations
-- **Risk Scoring**: 0-100 risk score with categorization (SAFE/SUSPICIOUS/PHISHING)
-- **Real-Time Detection**: Analyze selected text directly from web pages
-- **Context Menu Integration**: Right-click selected text to analyze
-- **Educational**: Provides detailed explanations to help users learn phishing indicators
-
-### Project Structure
-
-```
-AI_Detection_6/
-├── .env                        # Environment variables (API key)
-├── .gitignore                  # Git ignore file
-├── requirements.txt            # Python dependencies
-├── phishing_detector.py        # Core phishing detection module
-├── api_server.py               # Flask API server
-├── test_detector.py            # Test suite with 5 test cases
-├── evaluate_model.py           # Quantitative evaluation with metrics
-├── README.md                   # This file
-├── BROWSER_EXTENSION_GUIDE.md  # Detailed extension testing guide
-├── archive/                    # Phishing email datasets
-│   ├── phishing_email.csv      # 82,487 samples
-│   └── (other datasets)
-└── extension/                  # Browser extension files
-    ├── manifest.json           # Extension configuration (Manifest V3)
-    ├── popup.html              # Extension popup UI
-    ├── popup.css               # Popup styling
-    ├── popup.js                # Popup logic
-    ├── background.js           # Service worker for context menus
-    ├── content.js              # Content script for text selection
-    └── icons/                  # Extension icons
-        ├── create_icons.py     # Icon generator script
-        └── README.md
-```
-
----
-
-## Installation & Setup
-
-### Prerequisites
-
-- Python 3.8 or higher
-- Google Gemini API key (free tier)
-- Chrome 88+ or Firefox 78+
-- Internet connection (for Gemini API)
-- pip (Python package manager)
-
-### Detailed Setup Steps
-
-#### Step 1: Install Python Dependencies
+Requires [Node.js](https://nodejs.org/) 18+ to build (not to run).
 
 ```bash
-pip install -r requirements.txt
+cd extension
+npm install      # WebLLM, Kokoro/transformers, Piper, esbuild
+npm run package  # bundles + vendors runtimes + emits build/chrome, build/firefox, build/safari
 ```
 
-Required packages:
-- `google-generativeai` - Gemini API client
-- `flask` - Web framework for API server
-- `flask-cors` - CORS support for browser extension
-- `python-dotenv` - Environment variable management
-- `pandas` - Dataset handling
-- `scikit-learn` - Quantitative evaluation metrics
-- `tqdm` - Progress bar for evaluation
+Then load it:
 
-#### Step 2: Configure API Key
+1. Open `chrome://extensions` (or `edge://extensions`).
+2. Enable **Developer mode**.
+3. **Load unpacked** → select `extension/build/chrome` (works for Chrome **and** Edge).
+4. Click the toolbar icon → the **side panel** opens.
+5. Accept the Terms/Privacy, choose an engine + model, and **Load AI Model** (or **Connect to Ollama**).
 
-Your `.env` file should be configured with your Gemini API key:
-
-```env
-GEMINI_API_KEY=your_api_key_here
-GEMINI_MODEL=gemini-2.5-flash
-BACKEND_HOST=localhost
-BACKEND_PORT=8080
-```
-
-**Note**: Replace `your_api_key_here` with your actual Gemini API key from https://ai.google.dev/. This uses the free tier of the Gemini API (no cost).
-
-#### Step 3: Create Extension Icons
-
-```bash
-cd extension/icons
-pip install pillow
-python create_icons.py
-cd ../..
-```
-
-This creates all required icon sizes (16x16, 32x32, 48x48, 128x128). The extension will work without icons, but they improve the visual experience.
+For quick iteration you can `npm run build` and load the `extension/` folder directly. Firefox and Safari builds are generated too — see `BROWSER_EXTENSION_GUIDE.md` (Safari needs Xcode conversion).
 
 ---
 
-## Usage
+## How it works
 
-### Running the System
-
-#### Start the Backend API Server
-
-```bash
-python api_server.py
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Side panel (sidepanel.html)                                  │
+│                                                               │
+│  Analyze / chat ─► engine.chat.completions.create({messages}) │
+│        │                 │                                    │
+│        │                 ├─ In-browser: WebLLM (WebGPU)        │
+│        │                 └─ Ollama: local server (adapter)     │
+│        ▼                                                       │
+│   Structured JSON verdict (schema-constrained)                │
+│   Streaming chat ─► sentence pipeline ─► Kokoro/Piper voice    │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-The server will start at `http://localhost:8080`. You should see:
+- Both engines expose the **same OpenAI-shaped interface**, so analysis, JSON-schema output, and streaming chat work identically.
+- Selected-text capture uses **`activeTab` + `scripting`** (on-demand injection only when you click "Analyze Selected Text") — there is **no always-on content script**.
+- The prompt reasons before concluding (verdict emitted last) for better small-model accuracy.
+
+---
+
+## Forensic provenance
+
+Every chat message is tagged with the **engine + exact model**, app version, and timestamp, and sealed with a **chained SHA-256 hash** (`integrity = SHA256(prevIntegrity | role | content | provenance)`), making the conversation tamper-evident. External (Ollama) responses are badged and recorded as user-supplied. Use the chat **Export** button for a portable JSON record. (This is tamper-*evident*, not an unforgeable signature — the data lives in the user's browser.)
+
+---
+
+## Verifying it works (test matrix)
+
+Target coverage: **4 browsers × 3 OSes = 12 environments**. Safari is macOS-only, so its Windows/Linux cells are **N/A** (10 real environments).
+
+### How to load per browser
+- **Chrome / Edge:** `chrome://extensions` (or `edge://extensions`) → Developer mode → **Load unpacked** → `extension/build/chrome`.
+- **Firefox:** `about:debugging` → This Firefox → **Load Temporary Add-on** → `extension/build/firefox/manifest.json` (WebGPU needs **Firefox 141+**).
+- **Safari (macOS):** open the generated Xcode project (`extension/build/safari-xcode/…`), set your signing Team, Run, then enable it in Safari ▸ Settings ▸ Extensions.
+
+### Per-environment checklist (what a ✅ means)
+Run each in the target environment:
+1. **Loads** — extension installs with no manifest/CSP errors; side panel (or sidebar/popup) opens; Terms/Privacy gate appears and accepts.
+2. **In-browser model** — load **Recommended (Qwen2.5-3B)**; it downloads/caches; **Analyze** a known phishing sample returns a sensible verdict; **Chat** replies.
+3. **Voice** — enable **🔊 Speak replies**; voice downloads once and speaks; panel stays scrollable while speaking.
+4. **Ollama** (if installed) — **Advanced → Refresh models → Connect** succeeds; analysis + chat work; assistant messages show the **⚠ External model** badge.
+5. **Polish** — dark mode toggles; selected-text/right-click analysis works; provenance **Export** downloads a record.
+
+### Status
+
+Legend: ✅ pass · ⬜ not tested · ❌ fail · N/A not applicable
+
+| Environment | Loads | In-browser | Voice | Ollama |
+|---|---|---|---|---|
+| **Chrome — macOS** | ✅ | ✅ | ✅ | ✅ |
+| **Chrome — Windows** | ⬜ | ⬜ | ⬜ | ⬜ |
+| **Chrome — Linux** | ⬜ | ⬜ | ⬜ | ⬜ |
+| **Edge — macOS** | ⬜ | ⬜ | ⬜ | ⬜ |
+| **Edge — Windows** | ⬜ | ⬜ | ⬜ | ⬜ |
+| **Edge — Linux** | ⬜ | ⬜ | ⬜ | ⬜ |
+| **Firefox — macOS** | ⬜ | ⬜ | ⬜ | ⬜ |
+| **Firefox — Windows** | ⬜ | ⬜ | ⬜ | ⬜ |
+| **Firefox — Linux** | ⬜ | ⬜ | ⬜ | ⬜ |
+| **Safari — macOS** | ⬜ | ⬜ | ⬜ | ⬜ |
+| **Safari — Windows** | N/A | N/A | N/A | N/A |
+| **Safari — Linux** | N/A | N/A | N/A | N/A |
+
+**Known per-environment caveats**
+- **WebGPU** (needed only for the *in-browser* model, not Ollama): Chrome/Edge broad; **Firefox 141+**; **Safari 26+ / recent macOS**. Where WebGPU is unavailable, the **Ollama** path still works.
+- **Firefox** uses a sidebar (`sidebar_action`) instead of the side panel; voice/ONNX under MV3 is the most likely failure point — note any console errors.
+- **Safari** must be built via Xcode and uses a popup (no side-panel API); requires an Apple Developer signing identity.
+- **Ollama** needs the one-time `OLLAMA_ORIGINS` setup (the in-app **Advanced** card shows OS-specific steps).
+
+### Linux distros
+
+The **extension itself is distro-agnostic** — it runs in the browser, so a single mainstream distro (e.g. Ubuntu) verifies the in-browser path. Whether the in-browser model works depends on the machine's **GPU driver / WebGPU support** (Mesa version), not the distro family; if WebGPU is unavailable, use Ollama.
+
+The only Linux-variable part is the **Ollama `OLLAMA_ORIGINS` setup**, which depends on the **init system**, not the distro per se. Verify the setup once per init family:
+
+| Linux family | Setup method | Verified |
+|---|---|---|
+| **systemd** — Debian/Ubuntu, Fedora/RHEL, Arch, openSUSE | systemd drop-in override (the in-app command) | ⬜ |
+| **NixOS** | `services.ollama.environmentVariables.OLLAMA_ORIGINS = "chrome-extension://<your-id>";` in `configuration.nix` → `nixos-rebuild switch` | ⬜ |
+| **Gentoo / non-systemd (OpenRC), or manual** | stop Ollama, then `OLLAMA_ORIGINS="chrome-extension://<your-id>" ollama serve` | ⬜ |
+
+(The in-app **Advanced** card lists all three for Linux, since the extension can't detect the distro.)
+
+## Project structure
+
 ```
-Phishing detector initialized successfully
-Starting Phishing Detection API server on localhost:8080
- * Running on http://localhost:8080
-```
-
-Keep this terminal window open while using the extension.
-
-#### Using the Browser Extension
-
-**Method 1: Paste and Analyze**
-1. Click the extension icon in your browser toolbar
-2. Paste the suspicious message in the text area
-3. Select the message type (Email, SMS, URL, Chat)
-4. Click "Analyze Message"
-5. Wait 5-10 seconds for AI analysis
-6. View detailed results with verdict, risk score, red flags, and advice
-
-**Method 2: Analyze Selected Text**
-1. Go to any webpage
-2. Select/highlight text on the page
-3. Click the extension icon
-4. Click "Analyze Selected Text" button
-5. The text populates automatically and analysis begins
-
-**Method 3: Right-Click Context Menu**
-1. Select text on any webpage
-2. Right-click and choose "Analyze for Phishing"
-3. Extension opens and analyzes automatically
-
-### Testing the System
-
-#### Run the Test Suite
-
-```bash
-python test_detector.py
-```
-
-This analyzes 5 diverse test cases:
-1. Clear phishing attempt (PayPal impersonation)
-2. Legitimate business email (Amazon shipping)
-3. Suspicious SMS (bank alert)
-4. Typosquatting URL
-5. CEO fraud / Business Email Compromise
-
-#### Run Quantitative Evaluation
-
-```bash
-python evaluate_model.py [sample_size]
-```
-
-This script performs quantitative evaluation on the phishing email dataset:
-- **Default**: Evaluates 100 samples (50 phishing, 50 legitimate)
-- **Custom**: Specify sample size as argument, e.g., `python evaluate_model.py 10`
-- **Metrics**: Computes accuracy, precision, recall, and F1 score
-- **Output**: Saves detailed results to `evaluation_results.json`
-- **Note**: Evaluation respects API rate limits (15 requests/minute)
-
-Example output (from actual run on 10 samples):
-```
-EVALUATION RESULTS
-==================
-Accuracy:  0.6000 (60.00%)
-Precision: 0.4286 (42.86%)
-Recall:    1.0000 (100.00%)
-F1 Score:  0.6000
-
-CONFUSION MATRIX
-                 Predicted
-                 Legit  Phishing
-Actual  Legit        3       4
-        Phishing     0       3
-```
-
-#### Test with Sample Messages
-
-**Legitimate Email:**
-```
-Subject: Your Amazon order has shipped
-
-Hello,
-
-Your order #123-4567890-1234567 has been shipped and is on the way.
-
-Track your package: https://www.amazon.com/tracking
-
-Thanks for shopping with us!
-- Amazon Team
-```
-*Expected: SAFE verdict, low risk score (0-30)*
-
-**Suspicious SMS:**
-```
-ALERT: Your bank account has been compromised.
-Call us immediately at 555-0100 or click: bit.ly/bank-alert
-```
-*Expected: SUSPICIOUS or HIGHLY LIKELY PHISHING*
-
-#### Direct Python Usage
-
-```python
-from phishing_detector import PhishingDetector
-
-# Initialize detector
-detector = PhishingDetector()
-
-# Analyze a message
-message = "Click here to verify your account: http://paypa1.tk"
-result = detector.analyze_message(message, "email")
-
-# Print results
-print(f"Verdict: {result['verdict']}")
-print(f"Risk Score: {result['risk_score']}/100")
-print(f"Explanation: {result['explanation']}")
-for flag in result['red_flags']:
-    print(f"  - {flag}")
+Fraud_detection_Tool/
+├── README.md
+├── BROWSER_EXTENSION_GUIDE.md
+└── extension/
+    ├── manifest.json          # MV3 (side panel, activeTab+scripting, CSP, host perms)
+    ├── package.json           # deps + build/vendor/package scripts
+    ├── build.js               # esbuild bundler (+ node-builtin stubs)
+    ├── vendor.js              # copies ONNX/Piper runtimes into assets/
+    ├── package-targets.js     # emits build/chrome|firefox|safari
+    ├── background.js          # side panel/sidebar, context menus
+    ├── sidepanel.html / .css  # UI
+    ├── src/
+    │   ├── sidepanel.js       # model load (WebLLM/Ollama), analysis, library
+    │   ├── prompts.js         # system prompt, few-shot, JSON schema
+    │   ├── ollamaEngine.js    # Ollama adapter (OpenAI-shaped)
+    │   ├── ragStore.js        # IndexedDB: example library + conversations + embeddings
+    │   ├── chatPanel.js       # streaming chat + TTS pipeline + provenance
+    │   ├── ttsService.js      # Kokoro + Piper voices
+    │   ├── settings.js        # theme, voice/language, support link
+    │   ├── provenance.js      # message sealing / integrity hashing
+    │   └── legal.js           # Terms/Privacy + acceptance gate
+    ├── assets/                # vendored ONNX/Piper runtimes (generated)
+    ├── dist/                  # bundle (generated)
+    └── build/                 # per-browser packages (generated)
 ```
 
 ---
 
-## How It Works
+## Privacy
 
-### Prompt Engineering Strategy
-
-The system uses sophisticated prompt engineering to instruct Google Gemini to act as an expert cybersecurity analyst. The prompt includes:
-
-1. **Role Definition**: Establishes Gemini as a cybersecurity analyst specializing in phishing
-2. **Analysis Framework**: Defines 5 key evaluation dimensions with specific indicators
-3. **Few-Shot Learning**: Provides 3 example analyses to improve accuracy and consistency
-4. **Structured Output**: Requires JSON-formatted responses for reliable parsing
-5. **Evidence-Based Reasoning**: Demands specific examples from the message
-6. **Risk Calibration**: Clear guidelines (0-30: SAFE, 31-70: SUSPICIOUS, 71-100: PHISHING)
-
-### Few-Shot Prompting
-
-The detector uses few-shot learning by default to improve performance. Three example analyses are provided in the prompt:
-
-1. **Clear Phishing Example**: PayPal typosquatting with suspicious TLD
-2. **Legitimate Email Example**: Amazon shipping notification
-3. **Business Email Compromise Example**: CEO fraud attempt
-
-This approach helps the model:
-- Understand the expected output format
-- Calibrate risk scores appropriately
-- Identify subtle phishing indicators
-- Provide consistent, high-quality explanations
-
-You can disable few-shot prompting when initializing the detector:
-```python
-detector = PhishingDetector(use_few_shot=False)  # Zero-shot mode
-```
-
-### Five Analysis Dimensions
-
-The system evaluates messages across five comprehensive dimensions:
-
-#### 1. Sender/Email Address Analysis
-- Impersonation of known brands/organizations
-- Typosquatting detection (e.g., paypa1.com vs paypal.com)
-- Use of free email providers for corporate communications
-- Domain reputation and legitimacy checks
-- Mismatched sender display names and addresses
-
-#### 2. Urgency & Psychological Manipulation
-- Artificial time pressure ("act now", "within 24 hours")
-- Fear-based tactics (account suspension, security breach)
-- Too-good-to-be-true offers or rewards
-- Authority exploitation (impersonating CEO, IT, law enforcement)
-
-#### 3. Link & Domain Inspection
-- URL structure analysis for suspicious patterns
-- Domain/subdomain tricks (e.g., secure-paypal.phishing.com)
-- Suspicious Top-Level Domains (.tk, .ml, .ga, etc.)
-- Mismatches between link text and actual URL
-- URL shorteners hiding true destinations
-- Typosquatting in URLs
-
-#### 4. Grammar, Tone & Formatting
-- Poor grammar, spelling errors, awkward phrasing
-- Unusual formatting or inconsistent styling
-- Generic greetings ("Dear Customer" vs personalized)
-- Professional tone inconsistency with claimed sender
-
-#### 5. Requested Action Analysis
-- Requests for sensitive information (passwords, SSN, credit cards)
-- MFA codes or verification code requests
-- Urgent payment demands
-- Download attachments or click suspicious links
-- Grant remote access or install software
-
-### System Architecture
-
-```
-┌─────────────────────┐
-│   Browser Page      │
-│   (Any Website)     │
-└──────────┬──────────┘
-           │ User selects text
-           ▼
-┌─────────────────────┐
-│  Extension UI       │
-│  (popup.html)       │  ← User clicks "Analyze"
-└──────────┬──────────┘
-           │ HTTP POST to localhost:8080
-           ▼
-┌─────────────────────┐
-│   Flask API Server  │
-│   (api_server.py)   │  ← CORS enabled
-└──────────┬──────────┘
-           │ analyze_message()
-           ▼
-┌─────────────────────┐
-│  PhishingDetector   │
-│ (phishing_detector  │  ← Prompt engineering
-│       .py)          │
-└──────────┬──────────┘
-           │ API call with prompt
-           ▼
-┌─────────────────────┐
-│  Google Gemini API  │
-│  (gemini-2.5-flash) │  ← AI analysis
-└──────────┬──────────┘
-           │ JSON response
-           ▼
-┌─────────────────────┐
-│   Results Display   │
-│ Verdict + Risk Score│
-│ Red Flags + Advice  │
-└─────────────────────┘
-```
+Content you analyze or chat about is **not transmitted to any server we control**. The only outbound requests are **model/voice file downloads** from the HuggingFace / jsDelivr CDNs (first use, then cached), and — only if you choose Ollama — requests to your **own local** `localhost:11434`. No analytics, trackers, or ads. See the in-app Terms of Service and Privacy Policy.
 
 ---
 
-## Dataset Information
-
-This project uses the Phishing Email Dataset from Kaggle for evaluation and testing.
-
-**Source:** [Phishing Email Dataset on Kaggle](https://www.kaggle.com/datasets/naserabdullahalam/phishing-email-dataset)
-
-**Citation:**
-```
-Alam, Naser Abdullah. (2024). Phishing Email Dataset. Kaggle.
-https://www.kaggle.com/datasets/naserabdullahalam/phishing-email-dataset
-```
-
-**Dataset Details:**
-- **Size**: 82,487 email samples
-- **Format**: CSV with `text_combined` (email content) and `label` (0=Legitimate, 1=Phishing)
-- **Location**: `AI_Detection_6/archive/phishing_email.csv`
-
-**Additional Datasets Included:**
-- CEAS_08.csv
-- Enron.csv (legitimate emails)
-- Ling.csv
-- Nazario.csv
-- Nigerian_Fraud.csv
-- SpamAssasin.csv
-
-**Usage Note**: The dataset is used for quantitative evaluation (see `evaluate_model.py`). The system uses few-shot prompting with Gemini's pre-trained knowledge, not fine-tuning or traditional training.
-
----
-
-## Assignment Compliance
-
-### Core Functionality (Mandatory – 50%) 
-
-**Prompt Engineering Template**
-- Comprehensive system prompt in `phishing_detector.py` → `_create_system_prompt()` method
-- Instructs Gemini to act as expert cybersecurity analyst
-- Structured step-by-step reasoning framework
-- Few-shot learning with 3 example analyses → `_get_few_shot_examples()` method
-
-**Analysis Dimensions (5+ indicators)** 
-1. Sender/email address analysis 
-2. Urgency / psychological manipulation 
-3. Link / domain inspection 
-4. Grammar, tone, formatting 
-5. Requested action analysis 
-
-**JSON-Formatted Output** 
-- `verdict`: SAFE / SUSPICIOUS / HIGHLY LIKELY PHISHING
-- `risk_score`: 0-100
-- `red_flags`: List of detected issues
-- `explanation`: 2-4 sentence summary
-- `user_advice`: Actionable recommendations
-- `indicators`: Detailed breakdown of each dimension
-
-**Multiple Input Types** 
-- Email text:  Full support
-- SMS/chat messages:  Full support
-- URLs:  Full support
-- Page snippets:  Supported via selected text
-
-### Implementation Option (30%) 
-
-**Option C - Browser Extension Prototype** 
-- Chrome/Firefox compatible extension 
-- Analyze selected text from web pages 
-- Analyze links via right-click context menu 
-- Gmail integration (via selected text) 
-- Proof-of-concept fully functional 
-
-### Learning Outcomes Achieved 
-
-1. **Integrate Gemini API in Python** 
-   - Implemented in `phishing_detector.py`
-   - Proper error handling and response parsing
-   - Environment variable configuration
-
-2. **Design Effective System Prompts**
-   - Few-shot learning with 3 example analyses
-   - Structured reasoning framework
-   - Clear JSON output format specification
-
-3. **Analyze Phishing Indicators** 
-   - All 5+ required indicators implemented
-   - LLM-powered reasoning for each dimension
-   - Red flag detection and explanation
-
-4. **User-Friendly Interface** 
-   - Browser extension with intuitive UI
-   - Real-world usability (paste, select, right-click)
-   - Clear visual indicators and advice
-
-5. **Evaluate System Performance**
-   - Test suite with 5 diverse test cases
-   - Quantitative evaluation with accuracy, precision, recall, F1 score
-   - Confusion matrix and classification report
-   - Evaluation on real phishing dataset (82,487 samples)
-
-6. **Ethical Considerations** 
-   - Privacy concerns addressed
-   - Defensive security purpose only
-   - Limitations clearly documented
-   - Misuse prevention measures
-
-### Free-Tier API Compliance 
-
-**Google Gemini API:**
-- Model: `gemini-2.5-flash` (free tier)
-- API Key: Configured in `.env` file
-- Rate Limits: 15 requests/minute, 1,500 requests/day
-- Cost: $0 (within free tier limits)
-
-**No Paid Services:**
-- Backend runs locally (no cloud hosting)
-- Extension runs in browser (no server costs)
-- All processing via free Gemini API
-
----
-
-## Troubleshooting
-
-### Backend Server Won't Start
-
-**Symptoms**: Error messages when running `python api_server.py`
-
-**Solutions:**
-- Check that port 8080 is available (not used by another app)
-- Verify `.env` file exists and contains API key
-- Install dependencies: `pip install -r requirements.txt`
-- Try using `python3` instead of `python`
-
-### Extension Shows "API Offline"
-
-**Symptoms**: Red dot with "API Offline - Start backend server" message
-
-**Solutions:**
-1. Ensure backend server is running: `python api_server.py`
-2. Check server console for startup message
-3. Verify server is on port 8080 (not 5000)
-4. Test API manually: Open `http://localhost:8080/api/health` in browser
-5. Reload the extension after starting server
-
-### No Results Displayed / Analysis Hangs
-
-**Symptoms**: Click "Analyze" but nothing happens or loading spinner never stops
-
-**Solutions:**
-1. Open browser console (F12 → Console tab) to check for errors
-2. Verify backend server is responding (check terminal for request logs)
-3. Check API key is valid in `.env` file
-4. Ensure message is not empty
-5. Try a shorter message (very long messages may timeout)
-6. Check internet connection (Gemini API requires internet)
-
-### Icons Not Showing
-
-**Symptoms**: Extension shows generic/default icon
-
-**Solution:**
-```bash
-cd extension/icons
-pip install pillow
-python create_icons.py
-```
-Then reload the extension in `chrome://extensions/`
-
-Note: Extension works fine without custom icons.
-
-### Model Not Found Error
-
-**Symptoms**: Error: "404 models/gemini-1.5-flash is not found"
-
-**Solution:**
-The model name has been updated. Your `.env` should have:
-```env
-GEMINI_MODEL=gemini-2.5-flash
-```
-
-### Port 5000 Already in Use (Mac)
-
-**Symptoms**: Server won't start, port 5000 conflict
-
-**Solution:**
-Port 5000 is used by AirPlay on Mac. The project is configured to use port 8080 instead. Verify your `.env` has:
-```env
-BACKEND_PORT=8080
-```
-
----
-
-## API Documentation
-
-### Health Check Endpoint
-
-**Request:**
-```http
-GET /api/health
-```
-
-**Response:**
-```json
-{
-  "status": "healthy",
-  "message": "Phishing Detection API is running",
-  "detector_status": "ready"
-}
-```
-
-### Analyze Message Endpoint
-
-**Request:**
-```http
-POST /api/analyze
-Content-Type: application/json
-
-{
-  "message": "The message content to analyze",
-  "type": "email|sms|url|chat"
-}
-```
-
-**Response:**
-```json
-{
-  "verdict": "SAFE|SUSPICIOUS|HIGHLY LIKELY PHISHING",
-  "risk_score": 0-100,
-  "red_flags": [
-    "List of specific red flags found"
-  ],
-  "explanation": "2-4 sentence analysis summary",
-  "user_advice": "Clear, actionable advice",
-  "indicators": {
-    "sender_analysis": "Brief assessment",
-    "urgency_tactics": "Brief assessment",
-    "link_analysis": "Brief assessment",
-    "grammar_tone": "Brief assessment",
-    "requested_action": "Brief assessment"
-  },
-  "message_type": "email",
-  "model_used": "gemini-2.5-flash"
-}
-```
-
-### Batch Analysis Endpoint
-
-**Request:**
-```http
-POST /api/analyze/batch
-Content-Type: application/json
-
-{
-  "messages": [
-    {"content": "message 1", "type": "email"},
-    {"content": "message 2", "type": "sms"}
-  ]
-}
-```
-
-**Response:**
-```json
-{
-  "results": [
-    {...analysis result 1...},
-    {...analysis result 2...}
-  ],
-  "summary": {
-    "total": 2,
-    "safe": 1,
-    "suspicious": 0,
-    "phishing": 1
-  }
-}
-```
-
----
-
-## Performance & Limitations
-
-### Testing Results
-
-Evaluated on 10 samples (3 phishing, 7 legitimate) from the Kaggle phishing email dataset:
-
-- **Accuracy**: 60.00%
-- **Precision**: 42.86%
-- **Recall**: 100.00% (catches all phishing attempts)
-- **F1 Score**: 0.60
-
-**Confusion Matrix:**
-```
-                 Predicted
-                 Legit  Phishing
-Actual  Legit        3        4
-        Phishing     0        3
-```
-
-**Interpretation:**
-- **Zero False Negatives**: The system catches 100% of phishing attempts (3/3), meaning no phishing emails slip through undetected
-- **Moderate False Positive Rate**: 4 out of 7 legitimate emails flagged as suspicious
-- **Defensive Posture**: The model is intentionally conservative, preferring to warn users about potential threats rather than miss phishing attempts
-- **Real-World Trade-off**: In phishing detection, missing a dangerous email (false negative) is often more costly than flagging a safe email for review (false positive)
-
-**Additional Capabilities:**
-- **True Positive Detection**: Successfully identifies obvious phishing with high confidence (85-98 risk score)
-- **Sophisticated Attack Detection**: Identifies CEO fraud, typosquatting, and subtle manipulation tactics
-- **Explanation Quality**: Provides clear, educational explanations for all verdicts
-
-See `evaluation_results.json` for complete detailed results.
-
-### Known Limitations
-
-1. **API Dependency**: Requires internet connection and active Gemini API access
-2. **Rate Limits**: Free tier limited to 15 requests/minute, 1,500/day
-3. **Context Window**: Very long messages (>10,000 characters) may be truncated
-4. **Language Support**: Optimized for English; other languages may have reduced accuracy
-5. **Few-Shot Learning**: Uses prompt-based learning, not fine-tuning on specific datasets
-6. **False Negatives**: Highly sophisticated, novel phishing techniques may occasionally be missed
-
-### Ethical Considerations
-
-1. **Privacy**: Messages are sent to Google's Gemini API for analysis (see Google's privacy policy)
-2. **Defensive Use Only**: System designed for defensive security, not phishing creation
-3. **User Education**: Provides explanations to help users learn, not just block threats
-4. **No Guarantees**: Users should not solely rely on automated detection
-5. **Official Verification**: Always recommends verifying through official channels
-
----
-
-## Future Enhancements
-
-Potential improvements for future versions:
-
-1. **Fine-tuning**: Train on phishing datasets for improved accuracy
-2. **Multi-language Support**: Expand beyond English
-3. **Historical Tracking**: Store and analyze trends over time
-4. **Whitelist/Blacklist**: User-defined trusted and blocked domains
-5. **Gmail Direct Integration**: Native integration with Gmail interface
-6. **Mobile Support**: Mobile browser extension versions
-7. **Offline Mode**: Local ML model for offline analysis
-8. **Advanced Features**:
-   - Email header analysis
-   - Attachment scanning
-   - DMARC/SPF checks
-   - Link preview/sandboxing
-
----
-
-## Credits & License
-
-**Developer**: Brandon Newton
-**Course**: AI Detection Course Assignment
-**AI Model**: Google Gemini 2.5 Flash
-**Dataset**: Nasir Abdullahi Alam (Kaggle)
-**Frameworks**: Flask, Chrome Extensions API
-
-**License**: Educational use only (course assignment)
-
-### Acknowledgments
-
-- Google Gemini API for providing free-tier AI capabilities
-- Kaggle community for phishing email datasets
-- Chrome/Firefox for browser extension APIs
-- Flask framework for simple, effective API development
-
----
-
-## Additional Resources
-
-- **Google Gemini API Documentation**: https://ai.google.dev/gemini-api
-- **Browser Extension Guide**: See `BROWSER_EXTENSION_GUIDE.md` for detailed testing instructions
-- **Phishing Email Dataset**: https://www.kaggle.com/datasets/naserabdullahalam/phishing-email-dataset
-- **Chrome Extension Development**: https://developer.chrome.com/docs/extensions/
-
----
-
-## Support
-
-For issues or questions:
-1. Check the [Troubleshooting](#troubleshooting) section
-2. Review the [BROWSER_EXTENSION_GUIDE.md](BROWSER_EXTENSION_GUIDE.md) for extension-specific help
-3. Verify all [Quick Start](#quick-start-5-minutes) steps were completed
-4. Check Google Gemini API status and documentation
-
----
-
-**Ready to detect phishing? Start with the [Quick Start](#quick-start-5-minutes) guide above!**
+## Notes & limitations
+
+- This tool is **not a perfect solution and is subject to error** (false positives and negatives). Always verify suspicious messages through official channels.
+- In-browser mode requires **WebGPU**; if unavailable, switch to Ollama.
+- First model/voice download can take a few minutes; subsequent loads are cached.
+- Small in-browser models are less capable than large models — for best quality, use the 7B tier or a strong model via Ollama.

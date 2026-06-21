@@ -1,0 +1,23 @@
+{
+  "name": "phishing-detector-extension",
+  "version": "2.0.0",
+  "description": "In-browser AI phishing detection. Runs a local LLM via WebGPU (WebLLM) — no backend, no API keys, no rate limits.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.js",
+    "watch": "node build.js --watch",
+    "vendor": "node vendor.js",
+    "package": "node build.js && node vendor.js && node package-targets.js"
+  },
+  "dependencies": {
+    "@mintplex-labs/piper-tts-web": "^1.0.4",
+    "@mlc-ai/web-llm": "^0.2.80",
+    "kokoro-js": "^1.2.1"
+  },
+  "devDependencies": {
+    "@diffusionstudio/piper-wasm": "^1.0.0",
+    "esbuild": "^0.25.0",
+    "onnxruntime-web": "^1.23.2"
+  }
+}

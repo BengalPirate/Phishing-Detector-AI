@@ -1,305 +1,129 @@
 # Browser Extension Installation & Testing Guide
 
-This guide will walk you through installing and testing the Phishing Detector AI browser extension step-by-step.
+This guide walks you through building, installing, and testing the **Phishing Detector AI** extension. The AI runs **locally** — either **in your browser** (WebLLM / WebGPU) or via your **own local Ollama server** — with **no cloud and no API keys**.
 
-## Prerequisites
+---
 
-Before you begin, make sure:
-- [ ] Backend server is running (`python api_server.py`)
-- [ ] You see "Starting Phishing Detection API server on localhost:5000"
-- [ ] Extension icons are created (run `python extension/icons/create_icons.py`)
+## Pre-Installation Checklist
 
-## Installing the Extension
+- [ ] **Chrome or Edge 114+** (or another Chromium browser with WebGPU + Side Panel support)
+- [ ] A GPU that supports **WebGPU** (verify at <https://webgpureport.org> — you should see adapter info, not an error)
+- [ ] **Node.js 18+** installed (only needed to build the extension)
+- [ ] ~500 MB–1.7 GB free disk for the cached model
 
-### Google Chrome / Microsoft Edge
+---
 
-1. **Open Extensions Page**
-   - Chrome: Navigate to `chrome://extensions/`
-   - Edge: Navigate to `edge://extensions/`
-   - Or click the puzzle icon → "Manage Extensions"
+## Step 1: Build the extension
 
-2. **Enable Developer Mode**
-   - Look for "Developer mode" toggle in the top-right corner
-   - Turn it ON
+The extension bundles the WebLLM runtime, so build it once before loading.
 
-3. **Load the Extension**
-   - Click "Load unpacked" button
-   - Navigate to your project folder: `AI_Detection_All/AI_Detection_6/extension`
-   - Select the `extension` folder
-   - Click "Select Folder" (or "Open" on Mac)
+```bash
+cd extension
+npm install      # WebLLM, Kokoro/transformers, Piper, esbuild
+npm run package  # bundles, vendors runtimes, emits build/chrome|firefox|safari
+```
 
-4. **Verify Installation**
-   - You should see "Phishing Detector AI" in your extensions list
-   - Extension should be enabled (toggle switch is blue/on)
-   - You should see the extension icon in your browser toolbar
-   - If icon is not visible, click the puzzle icon and pin "Phishing Detector AI"
+You should see `✅ Built dist/sidepanel.bundle.js` followed by the `build/*` folders. If you plan to edit the code, `npm run build` rebuilds just the bundle (and you can load the `extension/` folder directly).
 
-### Mozilla Firefox
+---
 
-1. **Open Debugging Page**
-   - Navigate to `about:debugging#/runtime/this-firefox`
-   - Or go to `about:debugging` and click "This Firefox" in the sidebar
+## Step 2: Load the extension in Chrome
 
-2. **Load Temporary Add-on**
-   - Click "Load Temporary Add-on..." button
-   - Navigate to `AI_Detection_All/AI_Detection_6/extension`
-   - Select the `manifest.json` file
-   - Click "Open"
+1. Open `chrome://extensions` in your browser.
+2. Toggle **Developer mode** on (top-right corner).
+3. Click **Load unpacked**.
+4. Select the `extension/build/chrome` folder (works for Chrome **and** Edge). For quick dev you can load the `extension/` folder directly after `npm run build`.
+5. The **Phishing Detector AI** card appears. Pin it from the puzzle-piece menu for easy access.
 
-3. **Verify Installation**
-   - Extension should appear in the list
-   - You should see the extension icon in your toolbar
-   - **Note**: In Firefox, temporary extensions are removed when you close the browser
+---
 
-## Testing the Extension
+## Step 3: Load the AI model (one time)
 
-### Test 1: Popup Interface
+1. Click the extension's toolbar icon — the **side panel** opens on the right. Accept the Terms/Privacy on first launch.
+2. Pick an **AI engine**:
+   - **In-browser** — choose a model: **Fast** (Qwen2.5-0.5B, ~0.9 GB), **Recommended** (Qwen2.5-3B, ~2.0 GB), or **Maximum accuracy** (Qwen2.5-7B, ~4.7 GB).
+   - **Ollama** — click **Refresh models**, pick one of your local models, then **Connect to Ollama** (no download). See *Using Ollama* below for the one-time CORS setup.
+3. Click **Load AI Model** (or **Connect to Ollama**). For in-browser, a progress bar shows the model + voice downloading; keep the panel open until it finishes (it caches for next time).
+4. When you see **"Model ready,"** you're set.
 
-1. **Open the Popup**
-   - Click the Phishing Detector AI icon in your toolbar
-   - A popup window should appear
+### Using Ollama (advanced)
 
-2. **Check API Status**
-   - Look at the top of the popup
-   - You should see a green dot and "API Connected"
-   - If you see red dot "API Offline", the backend server isn't running
+The panel's **Advanced** section walks the user through this with OS-specific steps and a **Copy** button — and it fills in **this extension's exact origin** (e.g. `chrome-extension://<your-id>`) rather than a wildcard, so only this extension can reach Ollama. Set `OLLAMA_ORIGINS` to that value (shown in the card) and restart Ollama:
 
-3. **Paste and Analyze**
-   - Copy this phishing example:
+- **macOS:** `launchctl setenv OLLAMA_ORIGINS "chrome-extension://<your-id>"`, then quit and reopen the Ollama app.
+- **Windows:** `setx OLLAMA_ORIGINS "chrome-extension://<your-id>"`, then quit Ollama from the system tray and reopen it (sign out/in if needed).
+- **Linux (systemd):**
+  ```bash
+  sudo mkdir -p /etc/systemd/system/ollama.service.d && \
+  printf '[Service]\nEnvironment="OLLAMA_ORIGINS=chrome-extension://<your-id>"\n' | sudo tee /etc/systemd/system/ollama.service.d/override.conf && \
+  sudo systemctl daemon-reload && sudo systemctl restart ollama
+  ```
+  (Or, if you run Ollama manually: `OLLAMA_ORIGINS="chrome-extension://<your-id>" ollama serve`.)
+
+> Just copy the exact value from the in-app card — it has the real ID. `chrome-extension://*` (any extension) or `*` (any origin) also work but are looser.
+
+Then in the panel: **Advanced → Refresh models → Connect**. The connection is verified immediately; a **403** means the step above hasn't taken effect yet.
+
+---
+
+## Step 4: Test it
+
+### Quick paste test
+
+1. Paste a sample phishing message into the text box, e.g.:
+
    ```
-   URGENT: Your PayPal account will be suspended in 24 hours!
-   Click here to verify: http://paypa1.tk/verify
-   Provide your credit card number and CVV immediately to restore access.
+   URGENT: Your account will be suspended! Click here now:
+   http://paypa1.tk/verify and provide your password immediately.
    ```
-   - Paste it into the text area
-   - Select "Email" from the dropdown
-   - Click "Analyze Message"
-   - Wait 2-5 seconds for analysis
 
-4. **Review Results**
-   - You should see a verdict: "HIGHLY LIKELY PHISHING"
-   - Risk score should be high (70-100)
-   - Red flags should be listed (URL issues, urgency, sensitive info request)
-   - Detailed indicators should show analysis of each dimension
+2. Leave the type as **Email** and click **Analyze Message**.
+3. You should get a verdict of **HIGHLY LIKELY PHISHING** with a high risk score, red flags, and advice.
 
-### Test 2: Selected Text Analysis
+### Legitimate message test
 
-1. **Open Any Webpage**
-   - Go to any website (e.g., news article, blog post)
+Paste a normal message (e.g. an Amazon shipping note with a real `amazon.com` link). It should return **SAFE** with a low risk score.
 
-2. **Select Some Text**
-   - Highlight any paragraph or sentence on the page
+### Selected-text test
 
-3. **Use Extension**
-   - Click the Phishing Detector AI icon
-   - Click "Analyze Selected Text" button
-   - The selected text should appear in the text area
-   - Results should display automatically
+1. On any web page, select some text.
+2. Open the side panel and click **Analyze Selected Text** (or right-click → **Analyze for Phishing**).
+3. The text is pulled in and analyzed.
 
-### Test 3: Context Menu (Right-Click)
+### Link test
 
-1. **Select Text on Any Page**
-   - Highlight some text on any webpage
+Right-click any link on a page → **Check Link for Phishing**. The side panel opens with the URL pre-filled and analyzes it.
 
-2. **Right-Click**
-   - Right-click on the selected text
-   - Look for "Analyze for Phishing" in the context menu
-   - Click it
+---
 
-3. **Extension Opens**
-   - The popup should open
-   - Analysis should begin automatically
+## What each analysis shows
 
-### Test 4: Different Message Types
+- **Verdict** — `SAFE`, `SUSPICIOUS`, or `HIGHLY LIKELY PHISHING`
+- **Risk Score** — 0–100
+- **Red Flags** — specific issues found
+- **Analysis Summary** — plain-language reasoning
+- **Detailed Indicators** — sender, urgency, links, grammar/tone, requested action
+- **Recommended Action** — what to do next
 
-Try analyzing different types of content:
-
-**Legitimate Email:**
-```
-Subject: Your Amazon order has shipped
-
-Hello,
-
-Your order #123-4567890-1234567 has been shipped and is on the way.
-
-Track your package: https://www.amazon.com/tracking
-
-Thanks for shopping with us!
-- Amazon Team
-```
-Expected: SAFE verdict, low risk score
-
-**Suspicious SMS:**
-```
-ALERT: Your bank account has been compromised.
-Call us immediately at 555-0100 or click: bit.ly/bank-alert
-```
-Expected: SUSPICIOUS or HIGHLY LIKELY PHISHING
-
-**Suspicious URL:**
-```
-https://secure-paypa1-login.tk/verify-account.php?user=12345
-```
-Expected: HIGHLY LIKELY PHISHING
+---
 
 ## Troubleshooting
 
-### Extension Icon Not Showing
+| Symptom | Fix |
+|---------|-----|
+| "WebGPU is not available" error | Update to Chrome/Edge 114+ and confirm WebGPU works at <https://webgpureport.org>. Some older GPUs or Linux setups need WebGPU enabled via flags. |
+| Model download stalls or fails | Check your connection; reload the side panel and try again. The CDN hosts (huggingface.co, jsDelivr) must be reachable. |
+| "Load unpacked" shows a manifest error | Make sure you ran `npm run build` so `dist/sidepanel.bundle.js` exists, and that you selected the `extension/` folder. |
+| Changes to code don't show up | Rebuild (`npm run build`) and click the reload icon on the extension card in `chrome://extensions`. |
+| Analysis returns odd/empty JSON | Small models occasionally misformat output; the extension falls back to a safe "review manually" result. Try the **High Quality** model for more reliable results. |
 
-**Solution:**
-- Click the puzzle piece icon in Chrome/Edge toolbar
-- Find "Phishing Detector AI"
-- Click the pin icon to pin it to toolbar
+---
 
-### "API Offline" Status
+## How it works (under the hood)
 
-**Problem**: Green dot doesn't appear, shows "API Offline"
+1. You paste or select a message in the side panel.
+2. `src/sidepanel.js` sends it to the locally-loaded WebLLM engine with the phishing-analysis prompt from `src/prompts.js`.
+3. The model generates a **JSON-schema-constrained** verdict on your GPU via WebGPU.
+4. The result is rendered in the panel.
 
-**Solutions:**
-1. Make sure backend is running:
-   ```bash
-   python api_server.py
-   ```
-2. Check the server output - should show "Running on http://localhost:5000"
-3. Try accessing http://localhost:5000/api/health in your browser
-4. Restart the extension: disable and re-enable in extensions page
-
-### No Results Displayed
-
-**Problem**: Click "Analyze" but nothing happens
-
-**Solutions:**
-1. Open browser console (F12) and check for errors
-2. Make sure backend server is running
-3. Check that message is not empty
-4. Verify API key in .env file is valid
-
-### Extension Won't Load
-
-**Problem**: "Load unpacked" fails or extension shows errors
-
-**Solutions:**
-1. Make sure you selected the `extension` folder, not individual files
-2. Check that all required files exist:
-   - manifest.json
-   - popup.html, popup.css, popup.js
-   - background.js
-   - content.js
-3. Look at the error message - it will tell you what's wrong
-4. Refresh the extension after making fixes
-
-### Icons Not Showing
-
-**Problem**: Extension shows generic icon
-
-**Solution:**
-```bash
-cd extension/icons
-pip install pillow
-python create_icons.py
-```
-Then reload the extension.
-
-### Firefox: Extension Gone After Restart
-
-**This is normal!** Firefox temporary extensions are removed when you close the browser.
-
-**Solutions:**
-- Reload it each time: `about:debugging` → "Load Temporary Add-on"
-- For permanent installation, the extension would need to be signed by Mozilla
-- For this assignment, reloading each session is fine
-
-## Testing Checklist
-
-Before submitting your assignment, verify:
-
-- [ ] Backend server starts without errors
-- [ ] Extension installs successfully
-- [ ] Green "API Connected" status shows in popup
-- [ ] Can paste and analyze messages
-- [ ] Results display correctly with verdict, risk score, red flags
-- [ ] Different message types work (email, SMS, URL)
-- [ ] "Analyze Selected Text" button works
-- [ ] Context menu (right-click) appears and works
-- [ ] Clear button resets the form
-- [ ] Multiple analyses can be run in sequence
-
-## Demo for Your Professor
-
-Here's a suggested demo flow:
-
-1. **Show Backend Running**
-   - Open terminal showing `python api_server.py` running
-   - Show "API Connected" status in extension
-
-2. **Demonstrate Clear Phishing**
-   - Paste obvious phishing email
-   - Show high risk score and detailed analysis
-   - Highlight the red flags detected
-
-3. **Demonstrate Legitimate Email**
-   - Paste legitimate business email
-   - Show low risk score and "SAFE" verdict
-
-4. **Show Selected Text Feature**
-   - Go to a webpage (Gmail, news site, etc.)
-   - Select some text
-   - Use "Analyze Selected Text"
-   - Show results
-
-5. **Explain the Analysis**
-   - Point out the 5 indicator categories
-   - Show how the AI explains its reasoning
-   - Demonstrate the educational value
-
-## Advanced Usage
-
-### Testing with Real Emails
-
-1. Open your email (Gmail, Outlook, etc.)
-2. Find a suspicious email
-3. Select the email text
-4. Right-click → "Analyze for Phishing"
-5. Review the AI's analysis
-
-### Testing URLs
-
-1. Find a suspicious link (or create one)
-2. Copy the URL
-3. Open extension popup
-4. Paste URL
-5. Select "URL" from dropdown
-6. Analyze
-
-### Batch Testing
-
-Use the test script for comprehensive testing:
-```bash
-python test_detector.py
-```
-
-This runs 5 different test cases and shows detailed results.
-
-## Privacy Note
-
-When you analyze a message:
-1. Text is sent to your local Flask server (localhost:5000)
-2. Flask server sends it to Google Gemini API
-3. Results come back through the same path
-
-The extension does NOT:
-- Store any messages you analyze
-- Send data anywhere except Google Gemini API
-- Access your emails without you selecting text
-- Run automatically in the background
-
-## Next Steps
-
-Once the extension is working:
-- Try analyzing real suspicious emails
-- Experiment with different message types
-- Review the detailed indicators to learn about phishing
-- Read the README.md for full documentation
-- Check ASSIGNMENT_NOTES.md for assignment compliance
-
-Good luck with your assignment!
+Nothing is sent to any server. The only network activity is the **one-time model download**; after that, analysis is fully on-device.

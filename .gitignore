@@ -55,3 +55,9 @@ extension/*.zip
 
 # Large dataset files (download separately)
 archive/
+
+# Node / build
+node_modules/
+extension/node_modules/
+extension/build/
+extension/assets/

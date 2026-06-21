@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phishing Detector AI</title>
+    <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+    <!-- Legal acceptance gate (shown on first launch, before everything else) -->
+    <div id="legalOverlay" class="legal-overlay" style="display: none;">
+        <div class="legal-modal">
+            <div class="legal-modal-header">
+                <h2>Before you begin</h2>
+                <p class="legal-subtitle">Please review and accept the Terms of Service and Privacy Policy.</p>
+            </div>
+
+            <div class="legal-callout">
+                ⚠️ This tool uses AI and is <strong>not a perfect solution — it is subject to error</strong>.
+                It can miss phishing (false negatives) or flag safe content (false positives). Do not rely on
+                it as your only safeguard; always verify suspicious messages through official channels.
+            </div>
+
+            <div class="legal-section">
+                <h3>Terms of Service</h3>
+                <pre id="legalTosText" class="legal-text"></pre>
+            </div>
+
+            <div class="legal-section">
+                <h3>Privacy Policy</h3>
+                <pre id="legalPrivacyText" class="legal-text"></pre>
+            </div>
+
+            <div id="legalGateControls">
+                <label class="legal-check">
+                    <input type="checkbox" id="legalTosCheck" />
+                    <span>I have read and agree to the <strong>Terms of Service</strong>.</span>
+                </label>
+                <label class="legal-check">
+                    <input type="checkbox" id="legalPrivacyCheck" />
+                    <span>I have read and agree to the <strong>Privacy Policy</strong>.</span>
+                </label>
+
+                <p id="legalDeclinedMsg" class="legal-declined" style="display: none;">
+                    You must accept both the Terms of Service and Privacy Policy to use this application.
+                    You can close the side panel if you do not agree.
+                </p>
+
+                <div class="legal-actions">
+                    <button id="legalDeclineBtn" class="btn-secondary">Decline</button>
+                    <button id="legalAcceptBtn" class="btn-primary" disabled>Accept &amp; Continue</button>
+                </div>
+            </div>
+
+            <div id="legalReviewControls" class="legal-actions" style="display: none;">
+                <button id="legalCloseBtn" class="btn-primary">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <button id="settingsBtn" class="settings-btn" title="Settings" aria-label="Settings">⚙️</button>
+            <h1>Phishing Detector AI</h1>
+            <p class="subtitle">Private, on-device AI · In-browser or local Ollama</p>
+
+            <!-- Settings dropdown -->
+            <div id="settingsPanel" class="settings-panel" style="display: none;">
+                <h3>Settings</h3>
+
+                <label class="settings-label" for="themeSelect">Theme</label>
+                <select id="themeSelect" class="settings-select">
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
+                    <option value="system">Match system</option>
+                </select>
+
+                <div class="settings-divider"></div>
+
+                <label class="settings-label" for="langSelect">Voice language</label>
+                <select id="langSelect" class="settings-select"></select>
+                <label class="settings-label" for="voiceSelect" style="margin-top: 8px;">Voice</label>
+                <select id="voiceSelect" class="settings-select"></select>
+                <p id="voiceSettingNote" class="muted" style="font-size: 11px; margin-top: 6px;">
+                    English uses Kokoro (natural); other languages use Piper. The voice downloads the first time it's used.
+                </p>
+
+                <div class="settings-divider"></div>
+
+                <button id="supportBtn" class="btn-primary support-btn">❤️ Support the developer</button>
+                <p class="settings-support-note muted">This tool is free. If it helps you, consider supporting development.</p>
+            </div>
+        </div>
+
+        <!-- Status Indicator -->
+        <div id="statusIndicator" class="status-indicator">
+            <div class="status-dot" id="statusDot"></div>
+            <span id="statusText">Loading…</span>
+        </div>
+
+        <!-- Model Loading Section -->
+        <div id="modelLoadingSection" class="model-loading-section">
+            <p class="model-intro">
+                This tool runs an AI model locally — by default right inside your browser
+                using WebGPU. Choose a version below and load it once; it's cached for future
+                use. (Advanced users can connect a local Ollama model instead — see below.)
+            </p>
+            <div id="webllmGroup" class="model-selector">
+                <label for="modelSelectLoad" class="model-label">Choose model:</label>
+                <select id="modelSelectLoad" class="model-dropdown"></select>
+                <p id="modelDescription" class="model-description"></p>
+            </div>
+
+            <button id="loadModelBtn" class="btn-primary load-model-btn">Load AI Model</button>
+
+            <details id="advancedEngine" class="advanced-engine">
+                <summary>Advanced: use your own AI app (Ollama)</summary>
+                <div id="ollamaGroup">
+                    <p class="muted ollama-intro">
+                        Ollama runs a powerful AI model on your own computer. This is for experienced
+                        users — <strong>if you're not sure, just use the simple option above</strong>, which
+                        needs no setup.
+                    </p>
+
+                    <div class="ollama-help">
+                        <p class="ollama-help-title">One-time setup so this app may use Ollama:</p>
+                        <ol class="ollama-steps">
+                            <li>Make sure the <strong>Ollama</strong> app is installed and running.</li>
+                            <li id="ollamaStepTerminal">Open the <strong>Terminal</strong> app
+                                <span class="muted">(press the ⌘ Command key + Spacebar, type “Terminal”, then press Enter).</span>
+                            </li>
+                            <li>
+                                Copy the line below, paste it into Terminal, and press <strong>Enter</strong>:
+                                <div class="copy-row">
+                                    <code id="ollamaCmd">launchctl setenv OLLAMA_ORIGINS "chrome-extension://…"</code>
+                                    <button id="ollamaCopyBtn" type="button" class="btn-secondary">Copy</button>
+                                </div>
+                            </li>
+                            <li id="ollamaStepRestart">Quit Ollama (click its icon in the top menu bar → <strong>Quit</strong>) and open it again.</li>
+                            <li>Click <strong>Refresh models</strong> below, choose your model, then <strong>Connect</strong>.</li>
+                        </ol>
+                    </div>
+
+                    <label for="ollamaModelSelect" class="model-label">Your Ollama model:</label>
+                    <select id="ollamaModelSelect" class="model-dropdown">
+                        <option value="">Click “Refresh models”…</option>
+                    </select>
+                    <div class="ollama-actions">
+                        <button id="ollamaRefreshBtn" type="button" class="btn-secondary">Refresh models</button>
+                        <button id="ollamaConnectBtn" type="button" class="btn-primary">Connect to Ollama</button>
+                    </div>
+                    <p id="ollamaStatus" class="model-description"></p>
+                </div>
+            </details>
+
+            <div id="loadingProgress" class="loading-progress" style="display: none;">
+                <div class="progress-bar">
+                    <div id="progressBarFill" class="progress-bar-fill"></div>
+                </div>
+                <p id="progressText" class="progress-text"></p>
+                <p id="progressPercent" class="progress-percent">0%</p>
+                <p id="embedStatus" class="embed-status"></p>
+                <p id="voiceLoadStatus" class="embed-status"></p>
+            </div>
+        </div>
+
+        <!-- Analysis Section (hidden until model loads) -->
+        <div id="analysisSection" class="analysis-section" style="display: none;">
+            <div class="active-model-bar">
+                <span class="active-model-info">Model: <strong id="activeModelLabel"></strong></span>
+                <button id="switchModelBtn" class="link-btn">Switch model</button>
+            </div>
+
+            <!-- Input Section -->
+            <div class="input-section">
+                <label for="messageInput">Paste message or URL to analyze:</label>
+                <textarea
+                    id="messageInput"
+                    placeholder="Paste email text, SMS message, or suspicious URL here..."
+                    rows="8"
+                ></textarea>
+
+                <div class="input-controls">
+                    <select id="messageType">
+                        <option value="email">Email</option>
+                        <option value="sms">SMS</option>
+                        <option value="url">URL</option>
+                        <option value="chat">Chat Message</option>
+                    </select>
+                    <button id="analyzeBtn" class="btn-primary" disabled>
+                        <span id="analyzeText">Analyze Message</span>
+                        <span id="analyzeLoader" class="loader" style="display: none;"></span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="quick-actions">
+                <button id="analyzeSelectedBtn" class="btn-secondary">Analyze Selected Text</button>
+                <button id="clearBtn" class="btn-secondary">Clear</button>
+            </div>
+
+            <!-- Results Section -->
+            <div id="resultsSection" class="results-section" style="display: none;">
+                <h2>Analysis Results</h2>
+
+                <p id="retrievalInfo" class="retrieval-info" style="display: none;"></p>
+
+                <div id="verdictCard" class="verdict-card">
+                    <div class="verdict-header">
+                        <span id="verdictIcon" class="verdict-icon"></span>
+                        <span id="verdictText" class="verdict-text"></span>
+                    </div>
+                    <div class="risk-score">
+                        <span>Risk Score:</span>
+                        <span id="riskScore" class="score-value"></span>
+                    </div>
+                </div>
+
+                <div class="result-card">
+                    <h3>Analysis Summary</h3>
+                    <p id="explanation"></p>
+                </div>
+
+                <div id="redFlagsSection" class="result-card" style="display: none;">
+                    <h3>Red Flags Detected</h3>
+                    <ul id="redFlagsList" class="red-flags-list"></ul>
+                </div>
+
+                <div class="result-card">
+                    <h3>Detailed Indicators</h3>
+                    <div id="indicatorsGrid" class="indicators-grid"></div>
+                </div>
+
+                <div class="result-card advice-card">
+                    <h3>Recommended Action</h3>
+                    <p id="userAdvice"></p>
+                </div>
+
+                <!-- Feedback / learning controls -->
+                <div id="feedbackBar" class="feedback-bar">
+                    <span class="feedback-label">Was this analysis correct?</span>
+                    <div class="feedback-buttons">
+                        <button id="confirmCorrectBtn" class="btn-feedback confirm">👍 Yes, save it</button>
+                        <button id="openCorrectBtn" class="btn-feedback fix">✏️ No, correct it</button>
+                    </div>
+                    <p class="feedback-hint">Saved examples teach the tool to recognize similar messages next time.</p>
+                </div>
+
+                <!-- Correction editor (hidden until "correct it") -->
+                <div id="correctionEditor" class="correction-editor" style="display: none;">
+                    <h3>Correct the analysis</h3>
+                    <p class="muted">Edit the JSON below (at minimum fix <code>verdict</code> and <code>risk_score</code>), then save it as a labeled example.</p>
+                    <textarea id="correctionJson" class="json-editor" rows="12" spellcheck="false"></textarea>
+                    <p id="correctionError" class="inline-error" style="display: none;"></p>
+                    <div class="editor-actions">
+                        <button id="saveCorrectionBtn" class="btn-primary">Save correction</button>
+                        <button id="cancelCorrectionBtn" class="btn-secondary">Cancel</button>
+                    </div>
+                </div>
+
+                <p id="feedbackSaved" class="feedback-saved" style="display: none;">✅ Saved to your example library.</p>
+            </div>
+
+            <!-- Example Library (learning) -->
+            <div class="library-section">
+                <button id="libraryToggle" class="library-toggle" type="button">
+                    <span id="libraryCaret">▶</span>
+                    <span>Example Library &amp; Learning</span>
+                    <span id="libraryCount" class="library-count">0</span>
+                </button>
+                <div id="libraryBody" class="library-body" style="display: none;">
+                    <p class="muted">
+                        The tool retrieves the most similar saved examples and shows them to the AI
+                        for each analysis. Add your own labeled examples to make it smarter over time.
+                        (This augments the prompt — it does not retrain the model's weights.)
+                    </p>
+
+                    <!-- Manual add -->
+                    <details class="library-block">
+                        <summary>➕ Add an example manually</summary>
+                        <label class="model-label" for="addText">Message text</label>
+                        <textarea id="addText" rows="5" placeholder="Paste the message..."></textarea>
+                        <label class="model-label" for="addType">Type</label>
+                        <select id="addType">
+                            <option value="email">Email</option>
+                            <option value="sms">SMS</option>
+                            <option value="url">URL</option>
+                            <option value="chat">Chat Message</option>
+                        </select>
+                        <label class="model-label" for="addJson">Correct analysis (JSON)</label>
+                        <textarea id="addJson" class="json-editor" rows="10" spellcheck="false"
+                            placeholder='{ "verdict": "HIGHLY LIKELY PHISHING", "risk_score": 90, "red_flags": [...], "explanation": "...", "user_advice": "...", "indicators": { ... } }'></textarea>
+                        <p id="addError" class="inline-error" style="display: none;"></p>
+                        <button id="addExampleBtn" class="btn-primary">Add to library</button>
+                    </details>
+
+                    <!-- Import -->
+                    <details class="library-block">
+                        <summary>📥 Import examples from a JSON file</summary>
+                        <p class="muted">
+                            A JSON array of labeled examples
+                            <span class="info-bubble" tabindex="0" aria-label="Expected JSON format">ⓘ<span class="info-tooltip"><pre>[
+  {
+    "text": "URGENT: verify your account...",
+    "type": "email",        // email | sms | url | chat
+    "analysis": {
+      "verdict": "HIGHLY LIKELY PHISHING",
+      // SAFE | SUSPICIOUS | HIGHLY LIKELY PHISHING
+      "risk_score": 92,     // integer 0-100
+      "red_flags": ["...", "..."],
+      "explanation": "...",
+      "user_advice": "...",
+      "indicators": {
+        "sender_analysis": "...",
+        "urgency_tactics": "...",
+        "link_analysis": "...",
+        "grammar_tone": "...",
+        "requested_action": "..."
+      }
+    }
+  }
+]</pre></span></span>
+                        </p>
+                        <input type="file" id="importFile" accept="application/json,.json" />
+                        <p id="importStatus" class="muted"></p>
+                    </details>
+
+                    <!-- Manage -->
+                    <div class="library-block">
+                        <button id="clearLibraryBtn" class="btn-secondary">Clear entire library</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Error Section -->
+            <div id="errorSection" class="error-section" style="display: none;">
+                <div class="error-content">
+                    <span class="error-icon">⚠️</span>
+                    <p id="errorMessage"></p>
+                </div>
+            </div>
+
+            <!-- Chat Assistant (stacked at the bottom) -->
+            <div id="chatSection" class="chat-section">
+                <div class="chat-section-header">
+                    <h2>PhishGuard Chat</h2>
+                    <div class="chat-header-actions">
+                        <button id="chatExportBtn" class="link-btn" type="button" title="Export this conversation as a tamper-evident JSON record">Export</button>
+                        <button id="chatHistoryToggle" class="link-btn" type="button">History</button>
+                        <button id="chatNewBtn" class="btn-secondary chat-new-btn" type="button">+ New</button>
+                    </div>
+                </div>
+                <p class="chat-subtitle muted">
+                    Ask about scams and suspicious messages. Conversations are saved on your device
+                    and the assistant can recall similar messages from your example library.
+                </p>
+
+                <div id="chatHistoryList" class="chat-history-list" style="display: none;">
+                    <button id="chatClearAllBtn" class="btn-secondary chat-clear-all" type="button">Clear all history</button>
+                </div>
+
+                <p id="chatRecallInfo" class="retrieval-info" style="display: none;"></p>
+
+                <div id="chatMessages" class="chat-messages">
+                    <p id="chatEmpty" class="chat-empty muted">Load the AI model above to start chatting.</p>
+                </div>
+
+                <div class="chat-voice-row">
+                    <label class="chat-speak-label">
+                        <input type="checkbox" id="chatSpeakToggle" />
+                        <span>🔊 Speak replies</span>
+                    </label>
+                    <span id="chatVoiceStatus" class="chat-voice-status"></span>
+                    <span class="chat-voice-hint muted">Pick a voice/language in ⚙️ Settings</span>
+                </div>
+
+                <div class="chat-input-row">
+                    <textarea id="chatInput" class="chat-input" rows="2"
+                        placeholder="Ask PhishGuard…" disabled></textarea>
+                    <button id="chatMicBtn" class="btn-secondary chat-mic-btn" title="Speak (voice to text)">🎤</button>
+                    <button id="chatStopSpeakBtn" class="btn-secondary chat-stop-btn" style="display: none;" title="Stop speaking">🔇</button>
+                    <button id="chatSendBtn" class="btn-primary chat-send-btn" disabled>Send</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <p>Powered by an on-device AI model (WebLLM · WebGPU)</p>
+            <p class="disclaimer">Always verify suspicious messages through official channels</p>
+            <p class="footer-legal">
+                <button id="footerTermsLink" class="link-btn">Terms</button>
+                <span class="footer-sep">·</span>
+                <button id="footerPrivacyLink" class="link-btn">Privacy</button>
+            </p>
+        </div>
+    </div>
+
+    <script type="module" src="dist/sidepanel.bundle.js"></script>
+</body>
+</html>
