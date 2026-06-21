@@ -15,18 +15,25 @@ import {
   RESPONSE_SCHEMA,
   buildUserPrompt,
   extractJson,
-} from './prompts.js';
-import { ragStore } from './ragStore.js';
-import { setupChatPanel, onChatModelReady } from './chatPanel.js';
-import { setupSettings } from './settings.js';
-import { ttsService } from './ttsService.js';
-import { setupLegalGate } from './legal.js';
-import { createOllamaEngine, listOllamaModels } from './ollamaEngine.js';
+} from './prompts';
+import { ragStore } from './ragStore';
+import { setupChatPanel, onChatModelReady } from './chatPanel';
+import { setupSettings } from './settings';
+import { ttsService } from './ttsService';
+import { setupLegalGate } from './legal';
+import { createOllamaEngine, listOllamaModels } from './ollamaEngine';
+import type {
+  AnalysisResult,
+  ChatEngine,
+  ChatResponse,
+  ModelInfo,
+  RagExample,
+} from './types';
 
 // Silence one benign transformers.js warning: HuggingFace omits Content-Length
 // on some model files, so it can't show a download %. The download works fine.
 const _origWarn = console.warn.bind(console);
-console.warn = (...args) => {
+console.warn = (...args: unknown[]) => {
   if (typeof args[0] === 'string' && args[0].includes('Unable to determine content-length')) return;
   _origWarn(...args);
 };
@@ -35,7 +42,7 @@ console.warn = (...args) => {
 const RAG_TOP_K = 3;
 
 // The most recent analysis, so the feedback controls can save/correct it.
-let lastAnalysis = null;
+let lastAnalysis: { text: string; type: string; result: AnalysisResult } | null = null;
 
 // Models offered to the user, ordered weakest -> strongest. Phishing analysis
 // is a reasoning task, so accuracy scales noticeably with model size.
@@ -61,18 +68,18 @@ const MODEL_OPTIONS = [
 ];
 
 // Engine state
-let engine = null;
+let engine: ChatEngine | null = null;
 let isLoading = false;
 // Default to the "Recommended" 3B tier — the 0.5B/1.7B models were unreliable.
 let selectedModelId = 'Qwen2.5-3B-Instruct-q4f16_1-MLC';
-let selectedEngine = 'webllm'; // 'webllm' (in-browser) or 'ollama' (local server)
+let selectedEngine: 'webllm' | 'ollama' = 'webllm';
 let selectedOllamaModel = '';
 
 // DOM elements (assigned on DOMContentLoaded)
-let els = {};
+let els!: ReturnType<typeof cacheElements>;
 
 document.addEventListener('DOMContentLoaded', () => {
-  cacheElements();
+  els = cacheElements();
   populateModelSelectors();
   setupEventListeners();
   prefillFromStorage();
@@ -87,70 +94,70 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function cacheElements() {
-  els = {
+  return {
     // status
-    statusDot: document.getElementById('statusDot'),
-    statusText: document.getElementById('statusText'),
+    statusDot: document.getElementById('statusDot') as HTMLElement,
+    statusText: document.getElementById('statusText') as HTMLElement,
     // model loading
-    modelLoadingSection: document.getElementById('modelLoadingSection'),
-    webllmGroup: document.getElementById('webllmGroup'),
-    advancedEngine: document.getElementById('advancedEngine'),
-    ollamaModelSelect: document.getElementById('ollamaModelSelect'),
-    ollamaRefreshBtn: document.getElementById('ollamaRefreshBtn'),
-    ollamaConnectBtn: document.getElementById('ollamaConnectBtn'),
-    ollamaCopyBtn: document.getElementById('ollamaCopyBtn'),
-    ollamaCmd: document.getElementById('ollamaCmd'),
-    ollamaStepTerminal: document.getElementById('ollamaStepTerminal'),
-    ollamaStepRestart: document.getElementById('ollamaStepRestart'),
-    ollamaStatus: document.getElementById('ollamaStatus'),
-    modelSelectLoad: document.getElementById('modelSelectLoad'),
-    modelDescription: document.getElementById('modelDescription'),
-    loadModelBtn: document.getElementById('loadModelBtn'),
-    loadingProgress: document.getElementById('loadingProgress'),
-    progressBarFill: document.getElementById('progressBarFill'),
-    progressText: document.getElementById('progressText'),
-    progressPercent: document.getElementById('progressPercent'),
-    embedStatus: document.getElementById('embedStatus'),
-    voiceLoadStatus: document.getElementById('voiceLoadStatus'),
+    modelLoadingSection: document.getElementById('modelLoadingSection') as HTMLElement,
+    webllmGroup: document.getElementById('webllmGroup') as HTMLElement,
+    advancedEngine: document.getElementById('advancedEngine') as HTMLDetailsElement,
+    ollamaModelSelect: document.getElementById('ollamaModelSelect') as HTMLSelectElement,
+    ollamaRefreshBtn: document.getElementById('ollamaRefreshBtn') as HTMLButtonElement,
+    ollamaConnectBtn: document.getElementById('ollamaConnectBtn') as HTMLButtonElement,
+    ollamaCopyBtn: document.getElementById('ollamaCopyBtn') as HTMLButtonElement,
+    ollamaCmd: document.getElementById('ollamaCmd') as HTMLElement,
+    ollamaStepTerminal: document.getElementById('ollamaStepTerminal') as HTMLElement,
+    ollamaStepRestart: document.getElementById('ollamaStepRestart') as HTMLElement,
+    ollamaStatus: document.getElementById('ollamaStatus') as HTMLElement,
+    modelSelectLoad: document.getElementById('modelSelectLoad') as HTMLSelectElement,
+    modelDescription: document.getElementById('modelDescription') as HTMLElement,
+    loadModelBtn: document.getElementById('loadModelBtn') as HTMLButtonElement,
+    loadingProgress: document.getElementById('loadingProgress') as HTMLElement,
+    progressBarFill: document.getElementById('progressBarFill') as HTMLElement,
+    progressText: document.getElementById('progressText') as HTMLElement,
+    progressPercent: document.getElementById('progressPercent') as HTMLElement,
+    embedStatus: document.getElementById('embedStatus') as HTMLElement,
+    voiceLoadStatus: document.getElementById('voiceLoadStatus') as HTMLElement,
     // analysis
-    analysisSection: document.getElementById('analysisSection'),
-    activeModelLabel: document.getElementById('activeModelLabel'),
-    switchModelBtn: document.getElementById('switchModelBtn'),
-    messageInput: document.getElementById('messageInput'),
-    messageType: document.getElementById('messageType'),
-    analyzeBtn: document.getElementById('analyzeBtn'),
-    analyzeText: document.getElementById('analyzeText'),
-    analyzeLoader: document.getElementById('analyzeLoader'),
-    analyzeSelectedBtn: document.getElementById('analyzeSelectedBtn'),
-    clearBtn: document.getElementById('clearBtn'),
+    analysisSection: document.getElementById('analysisSection') as HTMLElement,
+    activeModelLabel: document.getElementById('activeModelLabel') as HTMLElement,
+    switchModelBtn: document.getElementById('switchModelBtn') as HTMLButtonElement,
+    messageInput: document.getElementById('messageInput') as HTMLTextAreaElement,
+    messageType: document.getElementById('messageType') as HTMLSelectElement,
+    analyzeBtn: document.getElementById('analyzeBtn') as HTMLButtonElement,
+    analyzeText: document.getElementById('analyzeText') as HTMLElement,
+    analyzeLoader: document.getElementById('analyzeLoader') as HTMLElement,
+    analyzeSelectedBtn: document.getElementById('analyzeSelectedBtn') as HTMLButtonElement,
+    clearBtn: document.getElementById('clearBtn') as HTMLButtonElement,
     // results / errors
-    resultsSection: document.getElementById('resultsSection'),
-    retrievalInfo: document.getElementById('retrievalInfo'),
-    errorSection: document.getElementById('errorSection'),
-    errorMessage: document.getElementById('errorMessage'),
+    resultsSection: document.getElementById('resultsSection') as HTMLElement,
+    retrievalInfo: document.getElementById('retrievalInfo') as HTMLElement,
+    errorSection: document.getElementById('errorSection') as HTMLElement,
+    errorMessage: document.getElementById('errorMessage') as HTMLElement,
     // feedback / learning
-    feedbackBar: document.getElementById('feedbackBar'),
-    confirmCorrectBtn: document.getElementById('confirmCorrectBtn'),
-    openCorrectBtn: document.getElementById('openCorrectBtn'),
-    correctionEditor: document.getElementById('correctionEditor'),
-    correctionJson: document.getElementById('correctionJson'),
-    correctionError: document.getElementById('correctionError'),
-    saveCorrectionBtn: document.getElementById('saveCorrectionBtn'),
-    cancelCorrectionBtn: document.getElementById('cancelCorrectionBtn'),
-    feedbackSaved: document.getElementById('feedbackSaved'),
+    feedbackBar: document.getElementById('feedbackBar') as HTMLElement,
+    confirmCorrectBtn: document.getElementById('confirmCorrectBtn') as HTMLButtonElement,
+    openCorrectBtn: document.getElementById('openCorrectBtn') as HTMLButtonElement,
+    correctionEditor: document.getElementById('correctionEditor') as HTMLElement,
+    correctionJson: document.getElementById('correctionJson') as HTMLTextAreaElement,
+    correctionError: document.getElementById('correctionError') as HTMLElement,
+    saveCorrectionBtn: document.getElementById('saveCorrectionBtn') as HTMLButtonElement,
+    cancelCorrectionBtn: document.getElementById('cancelCorrectionBtn') as HTMLButtonElement,
+    feedbackSaved: document.getElementById('feedbackSaved') as HTMLElement,
     // library
-    libraryToggle: document.getElementById('libraryToggle'),
-    libraryCaret: document.getElementById('libraryCaret'),
-    libraryCount: document.getElementById('libraryCount'),
-    libraryBody: document.getElementById('libraryBody'),
-    addText: document.getElementById('addText'),
-    addType: document.getElementById('addType'),
-    addJson: document.getElementById('addJson'),
-    addError: document.getElementById('addError'),
-    addExampleBtn: document.getElementById('addExampleBtn'),
-    importFile: document.getElementById('importFile'),
-    importStatus: document.getElementById('importStatus'),
-    clearLibraryBtn: document.getElementById('clearLibraryBtn'),
+    libraryToggle: document.getElementById('libraryToggle') as HTMLButtonElement,
+    libraryCaret: document.getElementById('libraryCaret') as HTMLElement,
+    libraryCount: document.getElementById('libraryCount') as HTMLElement,
+    libraryBody: document.getElementById('libraryBody') as HTMLElement,
+    addText: document.getElementById('addText') as HTMLTextAreaElement,
+    addType: document.getElementById('addType') as HTMLSelectElement,
+    addJson: document.getElementById('addJson') as HTMLTextAreaElement,
+    addError: document.getElementById('addError') as HTMLElement,
+    addExampleBtn: document.getElementById('addExampleBtn') as HTMLButtonElement,
+    importFile: document.getElementById('importFile') as HTMLInputElement,
+    importStatus: document.getElementById('importStatus') as HTMLElement,
+    clearLibraryBtn: document.getElementById('clearLibraryBtn') as HTMLButtonElement,
   };
 }
 
@@ -224,7 +231,7 @@ function setupOllamaInstructions() {
 
 async function copyOllamaCommand() {
   try {
-    await navigator.clipboard.writeText(els.ollamaCmd.textContent);
+    await navigator.clipboard.writeText(els.ollamaCmd.textContent ?? '');
     const orig = els.ollamaCopyBtn.textContent;
     els.ollamaCopyBtn.textContent = 'Copied!';
     setTimeout(() => (els.ollamaCopyBtn.textContent = orig), 1500);
@@ -264,11 +271,11 @@ async function refreshOllamaModels() {
 
 function setupEventListeners() {
   els.modelSelectLoad.addEventListener('change', (e) => {
-    selectedModelId = e.target.value;
+    selectedModelId = (e.target as HTMLSelectElement).value;
     updateModelDescription();
   });
   els.ollamaModelSelect.addEventListener('change', (e) => {
-    selectedOllamaModel = e.target.value;
+    selectedOllamaModel = (e.target as HTMLSelectElement).value;
   });
   els.ollamaRefreshBtn.addEventListener('click', refreshOllamaModels);
   els.ollamaCopyBtn.addEventListener('click', copyOllamaCommand);
@@ -311,7 +318,10 @@ function setupEventListeners() {
 /** Prefill the textarea from context-menu / content-script captured text. */
 async function prefillFromStorage() {
   try {
-    const data = await chrome.storage.local.get(['selectedText', 'messageType']);
+    const data = (await chrome.storage.local.get(['selectedText', 'messageType'])) as {
+      selectedText?: string;
+      messageType?: string;
+    };
     if (data.selectedText) {
       els.messageInput.value = data.selectedText;
       if (data.messageType) els.messageType.value = data.messageType;
@@ -360,7 +370,7 @@ async function initializeModel() {
     // Dispose any previous engine (model switch).
     if (engine) {
       try {
-        await engine.unload();
+        await engine.unload?.();
       } catch (_) {
         /* ignore */
       }
@@ -405,8 +415,8 @@ async function initializeModel() {
       const MAX_ATTEMPTS = 4;
       for (let attempt = 1; ; attempt++) {
         try {
-          engine = await CreateMLCEngine(selectedModelId, {
-            initProgressCallback: (report) => {
+          engine = (await CreateMLCEngine(selectedModelId, {
+            initProgressCallback: (report: { progress?: number; text: string }) => {
               let pct = 0;
               if (typeof report.progress === 'number') {
                 pct = Math.round(report.progress * 100);
@@ -416,7 +426,7 @@ async function initializeModel() {
               }
               setProgress(pct, report.text);
             },
-          });
+          })) as unknown as ChatEngine;
           break; // success
         } catch (e) {
           const msg = e?.message || String(e);
@@ -451,7 +461,7 @@ async function initializeModel() {
     if (selectedEngine === 'ollama') {
       els.activeModelLabel.textContent = `Ollama · ${selectedOllamaModel}`;
     } else {
-      const model = MODEL_OPTIONS.find((m) => m.id === selectedModelId);
+      const model = MODEL_OPTIONS.find((m) => m.id === selectedModelId)!;
       els.activeModelLabel.textContent = `${model.name} · ${model.size}`;
     }
     updateStatus(true, 'Model ready');
@@ -499,7 +509,7 @@ async function initializeModel() {
   }
 }
 
-function setProgress(pct, text) {
+function setProgress(pct: number, text: string) {
   els.progressBarFill.style.width = `${pct}%`;
   els.progressPercent.textContent = `${pct}%`;
   els.progressText.textContent = text;
@@ -555,7 +565,7 @@ async function handleAnalyzeSelected() {
     try {
       const results = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        func: () => (window.getSelection() ? window.getSelection().toString() : ''),
+        func: () => window.getSelection()?.toString() ?? '',
       });
       text = (results && results[0] && results[0].result ? results[0].result : '').trim();
     } catch (injectErr) {
@@ -586,21 +596,21 @@ function handleClear() {
   els.analyzeBtn.disabled = true;
 }
 
-async function analyzeMessage(message, type) {
+async function analyzeMessage(message: string, type: string) {
   setAnalyzing(true);
   hideResults();
   hideError();
 
   try {
     // RAG: pull the most similar labeled examples from the user's library.
-    let retrieved = [];
+    let retrieved: RagExample[] = [];
     try {
       retrieved = await ragStore.retrieve(message, RAG_TOP_K);
     } catch (ragErr) {
       console.warn('Retrieval failed; proceeding without examples:', ragErr);
     }
 
-    const completion = await engine.chat.completions.create({
+    const completion = (await engine!.chat.completions.create({
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: buildUserPrompt(message, type, retrieved) },
@@ -611,7 +621,7 @@ async function analyzeMessage(message, type) {
         type: 'json_object',
         schema: JSON.stringify(RESPONSE_SCHEMA),
       },
-    });
+    })) as ChatResponse;
 
     const raw = completion.choices[0]?.message?.content || '';
     const result = extractJson(raw);
@@ -636,7 +646,7 @@ async function analyzeMessage(message, type) {
   }
 }
 
-function showRetrievalInfo(retrieved) {
+function showRetrievalInfo(retrieved: RagExample[]) {
   if (retrieved && retrieved.length > 0) {
     els.retrievalInfo.textContent = `🧠 Used ${retrieved.length} similar example${
       retrieved.length > 1 ? 's' : ''
@@ -652,7 +662,7 @@ function showRetrievalInfo(retrieved) {
 // ---------------------------------------------------------------------------
 
 /** Reduce a full result to the core labeled-analysis fields we store. */
-function toStoredAnalysis(result) {
+function toStoredAnalysis(result: AnalysisResult) {
   return {
     verdict: result.verdict,
     risk_score: result.risk_score,
@@ -801,14 +811,15 @@ async function handleAddExample() {
   }
 }
 
-async function handleImportFile(event) {
-  const file = event.target.files && event.target.files[0];
+async function handleImportFile(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files && input.files[0];
   if (!file) return;
 
   if (!ragStore.embeddingsReady) {
     els.importStatus.textContent =
       'Load the model first — examples need the retrieval model to be embedded.';
-    event.target.value = '';
+    input.value = '';
     return;
   }
 
@@ -845,7 +856,7 @@ async function handleImportFile(event) {
   } catch (err) {
     els.importStatus.textContent = 'Import failed: ' + (err?.message || String(err));
   } finally {
-    event.target.value = '';
+    input.value = '';
   }
 }
 
@@ -869,21 +880,21 @@ async function handleClearLibrary() {
 }
 
 // ---------------------------------------------------------------------------
-// Rendering (ported from the original popup.js)
+// Rendering
 // ---------------------------------------------------------------------------
 
-function displayResults(result) {
+function displayResults(result: AnalysisResult) {
   hideError();
 
-  const verdictCard = document.getElementById('verdictCard');
-  const verdictIcon = document.getElementById('verdictIcon');
-  const verdictText = document.getElementById('verdictText');
-  const riskScore = document.getElementById('riskScore');
-  const explanation = document.getElementById('explanation');
-  const userAdvice = document.getElementById('userAdvice');
-  const indicatorsGrid = document.getElementById('indicatorsGrid');
-  const redFlagsSection = document.getElementById('redFlagsSection');
-  const redFlagsList = document.getElementById('redFlagsList');
+  const verdictCard = document.getElementById('verdictCard') as HTMLElement;
+  const verdictIcon = document.getElementById('verdictIcon') as HTMLElement;
+  const verdictText = document.getElementById('verdictText') as HTMLElement;
+  const riskScore = document.getElementById('riskScore') as HTMLElement;
+  const explanation = document.getElementById('explanation') as HTMLElement;
+  const userAdvice = document.getElementById('userAdvice') as HTMLElement;
+  const indicatorsGrid = document.getElementById('indicatorsGrid') as HTMLElement;
+  const redFlagsSection = document.getElementById('redFlagsSection') as HTMLElement;
+  const redFlagsList = document.getElementById('redFlagsList') as HTMLElement;
 
   verdictCard.className = 'verdict-card';
   if (result.verdict === 'SAFE') {
@@ -905,7 +916,7 @@ function displayResults(result) {
   if (result.red_flags && result.red_flags.length > 0) {
     redFlagsSection.style.display = 'block';
     redFlagsList.innerHTML = '';
-    result.red_flags.forEach((flag) => {
+    result.red_flags.forEach((flag: string) => {
       const li = document.createElement('li');
       li.textContent = flag;
       redFlagsList.appendChild(li);
@@ -928,8 +939,8 @@ function displayResults(result) {
         const div = document.createElement('div');
         div.className = 'indicator-item';
         div.innerHTML = `<strong></strong><span></span>`;
-        div.querySelector('strong').textContent = ind.label;
-        div.querySelector('span').textContent = result.indicators[ind.key];
+        (div.querySelector('strong') as HTMLElement).textContent = ind.label;
+        (div.querySelector('span') as HTMLElement).textContent = result.indicators[ind.key];
         indicatorsGrid.appendChild(div);
       }
     });
@@ -943,12 +954,12 @@ function displayResults(result) {
 // UI helpers
 // ---------------------------------------------------------------------------
 
-function updateStatus(connected, message) {
+function updateStatus(connected: boolean, message: string) {
   els.statusDot.className = `status-dot ${connected ? 'connected' : 'disconnected'}`;
   els.statusText.textContent = message;
 }
 
-function showError(message) {
+function showError(message: string) {
   els.errorMessage.textContent = message;
   els.errorSection.style.display = 'block';
   els.resultsSection.style.display = 'none';
@@ -966,7 +977,7 @@ function hideResults() {
   els.retrievalInfo.style.display = 'none';
 }
 
-function setAnalyzing(analyzing) {
+function setAnalyzing(analyzing: boolean) {
   els.analyzeBtn.disabled = analyzing;
   els.analyzeText.style.display = analyzing ? 'none' : 'inline';
   els.analyzeLoader.style.display = analyzing ? 'inline-block' : 'none';

@@ -19,10 +19,12 @@
  * unforgeable signature (which would require a server-held private key).
  */
 
+import type { Conversation, Message, ModelInfo, Provenance } from './types';
+
 const GENESIS = 'GENESIS';
 const encoder = new TextEncoder();
 
-export async function sha256Hex(str) {
+export async function sha256Hex(str: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', encoder.encode(str));
   return Array.from(new Uint8Array(digest))
     .map((b) => b.toString(16).padStart(2, '0'))
@@ -33,11 +35,15 @@ export async function sha256Hex(str) {
  * Seal a message in place: attach provenance + a chained integrity hash based on
  * the previous message's integrity in the same conversation.
  */
-export async function sealMessage(conv, msg, modelInfo) {
+export async function sealMessage(
+  conv: Conversation,
+  msg: Message,
+  modelInfo: ModelInfo | null | undefined
+): Promise<void> {
   const idx = conv.messages.indexOf(msg);
   const prevIntegrity = idx > 0 ? conv.messages[idx - 1].integrity || GENESIS : GENESIS;
 
-  const provenance = {
+  const provenance: Provenance = {
     engine: modelInfo?.engine || 'unknown',
     model: modelInfo?.model || 'unknown',
     external: !!modelInfo?.external,

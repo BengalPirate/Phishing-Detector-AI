@@ -10,6 +10,8 @@
  * instead of forcing a snap judgment (which biased small models toward SAFE/0).
  */
 
+import type { AnalysisResult, RetrievedExample } from './types';
+
 export const SYSTEM_PROMPT = `You are an expert cybersecurity analyst specializing in phishing detection.
 Your task is to analyze a message (email, SMS, chat message, or URL) and produce a
 structured risk assessment. Assume the message may be hostile. Be skeptical.
@@ -211,7 +213,7 @@ export const RESPONSE_SCHEMA = {
  * Format RAG-retrieved examples into a few-shot block. Each example is a stored
  * { text, type, analysis } pair the user previously labeled or corrected.
  */
-function formatRetrievedExamples(examples) {
+function formatRetrievedExamples(examples: RetrievedExample[]) {
   if (!examples || examples.length === 0) return '';
   let block =
     '\nADDITIONAL REFERENCE EXAMPLES from the user\'s library, most similar to the message below. ' +
@@ -229,7 +231,11 @@ function formatRetrievedExamples(examples) {
  * are supplied (from the RAG store), they are appended after the static few-shot
  * examples so the model sees precedents relevant to this specific message.
  */
-export function buildUserPrompt(message, messageType, retrievedExamples = []) {
+export function buildUserPrompt(
+  message: string,
+  messageType: string,
+  retrievedExamples: RetrievedExample[] = []
+) {
   return `${FEW_SHOT_EXAMPLES}${formatRetrievedExamples(retrievedExamples)}
 
 ${ANALYZE_INSTRUCTION}
@@ -246,8 +252,8 @@ Provide your analysis in the required JSON format and order.`;
  * _extract_json_from_response. Also reconciles verdict with risk_score in case a
  * weak model emits a score and verdict that disagree.
  */
-export function extractJson(responseText) {
-  let parsed = null;
+export function extractJson(responseText: string): AnalysisResult {
+  let parsed: any = null;
   try {
     parsed = JSON.parse(responseText);
   } catch (_) {

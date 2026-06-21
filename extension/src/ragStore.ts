@@ -18,6 +18,15 @@
  */
 
 import { CreateMLCEngine } from '@mlc-ai/web-llm';
+import type { Conversation, RagExample } from './types';
+
+type EmbedEngine = Awaited<ReturnType<typeof CreateMLCEngine>>;
+type AddExampleInput = {
+  text: string;
+  type?: string;
+  analysis: RagExample['analysis'];
+  source?: string;
+};
 
 const DB_NAME = 'phishing-detector-rag';
 const DB_VERSION = 2;
@@ -28,7 +37,7 @@ const CONV_STORE = 'conversations';
 export const EMBED_MODEL_ID = 'snowflake-arctic-embed-s-q0f32-MLC-b4';
 
 /** Cosine similarity between two equal-length vectors. */
-function cosineSimilarity(a, b) {
+function cosineSimilarity(a: number[] | undefined, b: number[] | undefined): number {
   if (!a || !b || a.length !== b.length) return 0;
   let dot = 0;
   let normA = 0;
@@ -43,6 +52,10 @@ function cosineSimilarity(a, b) {
 }
 
 class RagStore {
+  db: IDBDatabase | null;
+  embedEngine: EmbedEngine | null;
+  _counter: number;
+
   constructor() {
     this.db = null;
     this.embedEngine = null;
@@ -51,9 +64,9 @@ class RagStore {
 
   // ---- IndexedDB ----------------------------------------------------------
 
-  async initDB() {
+  async initDB(): Promise<void> {
     if (this.db) return;
-    this.db = await new Promise((resolve, reject) => {
+    this.db = await new Promise<IDBDatabase>((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, DB_VERSION);
       req.onupgradeneeded = () => {
         const db = req.result;
@@ -69,11 +82,11 @@ class RagStore {
     });
   }
 
-  _tx(mode) {
-    return this.db.transaction([STORE], mode).objectStore(STORE);
+  _tx(mode: IDBTransactionMode) {
+    return this.db!.transaction([STORE], mode).objectStore(STORE);
   }
 
-  _genId() {
+  _genId(): string {
     // Deterministic-enough unique id without Date precision collisions.
     this._counter += 1;
     return `${Date.now()}-${this._counter}`;
@@ -82,22 +95,24 @@ class RagStore {
   // ---- Embeddings ---------------------------------------------------------
 
   /** Whether the embedding engine is ready. */
-  get embeddingsReady() {
+  get embeddingsReady(): boolean {
     return this.embedEngine !== null;
   }
 
   /** Load the embedding model (call once, after the chat model). */
-  async initEmbeddings(progressCallback) {
+  async initEmbeddings(
+    progressCallback?: (report: { text: string; progress?: number }) => void
+  ): Promise<void> {
     if (this.embedEngine) return;
     this.embedEngine = await CreateMLCEngine(EMBED_MODEL_ID, {
       initProgressCallback: progressCallback,
     });
   }
 
-  async embed(text) {
+  async embed(text: string): Promise<number[]> {
     if (!this.embedEngine) throw new Error('Embedding model not loaded');
     const reply = await this.embedEngine.embeddings.create({ input: [text] });
-    return reply.data[0].embedding;
+    return reply.data[0].embedding as number[];
   }
 
   // ---- CRUD ---------------------------------------------------------------
@@ -106,10 +121,10 @@ class RagStore {
    * Add a labeled example. `analysis` is the correct result JSON
    * (verdict/risk_score/red_flags/explanation/indicators/…).
    */
-  async addExample({ text, type, analysis, source }) {
+  async addExample({ text, type, analysis, source }: AddExampleInput): Promise<RagExample> {
     if (!text || !analysis) throw new Error('Example needs text and analysis');
     const embedding = await this.embed(text);
-    const example = {
+    const example: RagExample = {
       id: this._genId(),
       text,
       type: type || 'email',
@@ -118,7 +133,7 @@ class RagStore {
       createdAt: Date.now(),
       embedding,
     };
-    await new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const req = this._tx('readwrite').put(example);
       req.onsuccess = () => resolve();
       req.onerror = () => reject(req.error);
@@ -126,35 +141,35 @@ class RagStore {
     return example;
   }
 
-  async getAll() {
+  async getAll(): Promise<RagExample[]> {
     await this.initDB();
-    return new Promise((resolve, reject) => {
+    return new Promise<RagExample[]>((resolve, reject) => {
       const req = this._tx('readonly').getAll();
       req.onsuccess = () => resolve(req.result || []);
       req.onerror = () => reject(req.error);
     });
   }
 
-  async count() {
+  async count(): Promise<number> {
     await this.initDB();
-    return new Promise((resolve, reject) => {
+    return new Promise<number>((resolve, reject) => {
       const req = this._tx('readonly').count();
       req.onsuccess = () => resolve(req.result || 0);
       req.onerror = () => reject(req.error);
     });
   }
 
-  async delete(id) {
-    return new Promise((resolve, reject) => {
+  async delete(id: string): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
       const req = this._tx('readwrite').delete(id);
       req.onsuccess = () => resolve();
       req.onerror = () => reject(req.error);
     });
   }
 
-  async clear() {
+  async clear(): Promise<void> {
     await this.initDB();
-    return new Promise((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
       const req = this._tx('readwrite').clear();
       req.onsuccess = () => resolve();
       req.onerror = () => reject(req.error);
@@ -163,40 +178,40 @@ class RagStore {
 
   // ---- Conversations (chat history) --------------------------------------
 
-  _convTx(mode) {
-    return this.db.transaction([CONV_STORE], mode).objectStore(CONV_STORE);
+  _convTx(mode: IDBTransactionMode) {
+    return this.db!.transaction([CONV_STORE], mode).objectStore(CONV_STORE);
   }
 
-  async saveConversation(conv) {
+  async saveConversation(conv: Conversation): Promise<void> {
     await this.initDB();
-    return new Promise((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
       const req = this._convTx('readwrite').put(conv);
       req.onsuccess = () => resolve();
       req.onerror = () => reject(req.error);
     });
   }
 
-  async getAllConversations() {
+  async getAllConversations(): Promise<Conversation[]> {
     await this.initDB();
-    return new Promise((resolve, reject) => {
+    return new Promise<Conversation[]>((resolve, reject) => {
       const req = this._convTx('readonly').getAll();
       req.onsuccess = () => resolve(req.result || []);
       req.onerror = () => reject(req.error);
     });
   }
 
-  async deleteConversation(id) {
+  async deleteConversation(id: string): Promise<void> {
     await this.initDB();
-    return new Promise((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
       const req = this._convTx('readwrite').delete(id);
       req.onsuccess = () => resolve();
       req.onerror = () => reject(req.error);
     });
   }
 
-  async clearConversations() {
+  async clearConversations(): Promise<void> {
     await this.initDB();
-    return new Promise((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
       const req = this._convTx('readwrite').clear();
       req.onsuccess = () => resolve();
       req.onerror = () => reject(req.error);
@@ -210,7 +225,7 @@ class RagStore {
    * similarity score. Returns [] if the library is empty or embeddings aren't
    * ready (the caller then falls back to the static few-shot examples).
    */
-  async retrieve(text, k = 3) {
+  async retrieve(text: string, k = 3): Promise<RagExample[]> {
     if (!this.embeddingsReady) return [];
     const all = await this.getAll();
     if (all.length === 0) return [];

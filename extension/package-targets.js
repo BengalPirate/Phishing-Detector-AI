@@ -16,10 +16,9 @@ const OUT = path.join(ROOT, 'build');
 
 // Files every target needs (relative to the extension root).
 const SHARED = [
-  'background.js',
   'sidepanel.html',
   'sidepanel.css',
-  'dist',
+  'dist', // includes the bundled sidepanel + background (dist/background.js)
   'assets',
   'icons',
 ];
@@ -48,7 +47,7 @@ function firefoxManifest(base) {
   delete m.minimum_chrome_version;
   delete m.side_panel;
   m.permissions = (m.permissions || []).filter((p) => p !== 'sidePanel');
-  m.background = { scripts: ['background.js'] }; // Firefox MV3 uses an event page
+  m.background = { scripts: ['dist/background.js'] }; // Firefox MV3 uses an event page
   m.sidebar_action = {
     default_panel: 'sidepanel.html',
     default_title: 'Phishing Detector AI',

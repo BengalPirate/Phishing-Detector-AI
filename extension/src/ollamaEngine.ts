@@ -12,23 +12,41 @@
  *   OLLAMA_ORIGINS=chrome-extension://* ollama serve
  */
 
+import type {
+  ChatEngine,
+  ChatMessage,
+  ChatRequest,
+  ChatResponse,
+  ChatStreamChunk,
+} from './types';
+
 const OLLAMA_BASE = 'http://localhost:11434';
 
 /** List the models the user has pulled in Ollama (for the picker). */
-export async function listOllamaModels() {
+export async function listOllamaModels(): Promise<string[]> {
   const res = await fetch(`${OLLAMA_BASE}/api/tags`);
   if (!res.ok) throw new Error(`Ollama responded ${res.status}`);
   const data = await res.json();
-  return (data.models || []).map((m) => m.name).sort();
+  return (data.models || []).map((m: { name: string }) => m.name).sort();
+}
+
+interface OllamaBody {
+  model: string;
+  messages: ChatMessage[];
+  stream: boolean;
+  options: { temperature?: number; num_predict?: number };
+  format?: unknown;
 }
 
 /**
  * Build an engine bound to a specific Ollama model. Uses the native /api/chat
  * endpoint for full control over streaming (NDJSON) and structured output.
  */
-export function createOllamaEngine(model) {
-  async function create(opts) {
-    const body = {
+export function createOllamaEngine(model: string): ChatEngine {
+  async function create(
+    opts: ChatRequest
+  ): Promise<ChatResponse | AsyncIterable<ChatStreamChunk>> {
+    const body: OllamaBody = {
       model,
       messages: opts.messages,
       stream: !!opts.stream,
@@ -74,20 +92,20 @@ export function createOllamaEngine(model) {
     }
 
     // Streaming: Ollama returns newline-delimited JSON objects.
-    return (async function* () {
-      const reader = res.body.getReader();
+    return (async function* (): AsyncGenerator<ChatStreamChunk> {
+      const reader = res.body!.getReader();
       const decoder = new TextDecoder();
       let buf = '';
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         buf += decoder.decode(value, { stream: true });
-        let nl;
+        let nl: number;
         while ((nl = buf.indexOf('\n')) >= 0) {
           const line = buf.slice(0, nl).trim();
           buf = buf.slice(nl + 1);
           if (!line) continue;
-          let obj;
+          let obj: any;
           try {
             obj = JSON.parse(line);
           } catch (_) {

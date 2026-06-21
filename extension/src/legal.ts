@@ -284,29 +284,27 @@ const STORAGE_KEY = 'legalAcceptance';
  * Re-open the Terms/Privacy in read-only "review" mode (from the footer links).
  * Hides the acceptance controls and shows a Close button.
  */
-export function showLegalReview(scrollTo) {
-  const overlay = document.getElementById('legalOverlay');
-  document.getElementById('legalGateControls').style.display = 'none';
-  document.getElementById('legalReviewControls').style.display = 'flex';
+export function showLegalReview(scrollTo?: string): void {
+  const overlay = document.getElementById('legalOverlay') as HTMLElement;
+  (document.getElementById('legalGateControls') as HTMLElement).style.display = 'none';
+  (document.getElementById('legalReviewControls') as HTMLElement).style.display = 'flex';
   overlay.style.display = 'flex';
   const target = scrollTo === 'privacy' ? 'legalPrivacyText' : scrollTo === 'terms' ? 'legalTosText' : null;
   if (target) {
-    requestAnimationFrame(() => document.getElementById(target).scrollIntoView({ block: 'start' }));
+    requestAnimationFrame(() => document.getElementById(target)?.scrollIntoView({ block: 'start' }));
   }
 }
 
-export async function setupLegalGate() {
-  const overlay = document.getElementById('legalOverlay');
-  const tosEl = document.getElementById('legalTosText');
-  const privEl = document.getElementById('legalPrivacyText');
-  const tosCheck = document.getElementById('legalTosCheck');
-  const privCheck = document.getElementById('legalPrivacyCheck');
-  const acceptBtn = document.getElementById('legalAcceptBtn');
-  const declineBtn = document.getElementById('legalDeclineBtn');
-  const declinedMsg = document.getElementById('legalDeclinedMsg');
-  const closeBtn = document.getElementById('legalCloseBtn');
-  const gateControls = document.getElementById('legalGateControls');
-  const reviewControls = document.getElementById('legalReviewControls');
+export async function setupLegalGate(): Promise<void> {
+  const overlay = document.getElementById('legalOverlay') as HTMLElement;
+  const tosEl = document.getElementById('legalTosText') as HTMLElement;
+  const privEl = document.getElementById('legalPrivacyText') as HTMLElement;
+  const tosCheck = document.getElementById('legalTosCheck') as HTMLInputElement;
+  const privCheck = document.getElementById('legalPrivacyCheck') as HTMLInputElement;
+  const acceptBtn = document.getElementById('legalAcceptBtn') as HTMLButtonElement;
+  const declineBtn = document.getElementById('legalDeclineBtn') as HTMLElement;
+  const declinedMsg = document.getElementById('legalDeclinedMsg') as HTMLElement;
+  const closeBtn = document.getElementById('legalCloseBtn') as HTMLElement;
 
   tosEl.textContent = TERMS_OF_SERVICE;
   privEl.textContent = PRIVACY_POLICY;
@@ -323,7 +321,10 @@ export async function setupLegalGate() {
   // Already accepted current version?
   let accepted = false;
   try {
-    const stored = await chrome.storage.local.get(STORAGE_KEY);
+    const stored = (await chrome.storage.local.get(STORAGE_KEY)) as Record<
+      string,
+      { version?: string; accepted?: boolean } | undefined
+    >;
     accepted = stored[STORAGE_KEY]?.version === LEGAL_VERSION && stored[STORAGE_KEY]?.accepted === true;
   } catch (_) {
     /* ignore */
@@ -335,7 +336,7 @@ export async function setupLegalGate() {
 
   overlay.style.display = 'flex';
 
-  return new Promise((resolve) => {
+  return new Promise<void>((resolve) => {
     const updateBtn = () => {
       acceptBtn.disabled = !(tosCheck.checked && privCheck.checked);
     };

@@ -12,7 +12,9 @@
  * stashing selected text for the panel to pick up.
  */
 
-const ext = globalThis.browser || globalThis.chrome;
+const ext = (globalThis.browser || globalThis.chrome) as typeof chrome & {
+  sidebarAction?: { open(): Promise<void> };
+};
 const hasSidePanel = !!(ext.sidePanel && ext.sidePanel.setPanelBehavior);
 const hasSidebar = !!ext.sidebarAction;
 
@@ -47,7 +49,7 @@ ext.runtime.onInstalled.addListener(() => {
 if (!hasSidePanel && hasSidebar && ext.action && ext.action.onClicked) {
   ext.action.onClicked.addListener(() => {
     try {
-      ext.sidebarAction.open();
+      ext.sidebarAction?.open();
     } catch (err) {
       console.warn('sidebarAction.open failed:', err);
     }
@@ -56,7 +58,7 @@ if (!hasSidePanel && hasSidebar && ext.action && ext.action.onClicked) {
 
 // Context-menu clicks: stash the text, then surface the UI where possible.
 ext.contextMenus?.onClicked.addListener(async (info, tab) => {
-  let payload = null;
+  let payload: { selectedText: string; messageType: string } | null = null;
   if (info.menuItemId === 'analyzePhishing' && info.selectionText) {
     payload = { selectedText: info.selectionText, messageType: 'email' };
   } else if (info.menuItemId === 'analyzeLink' && info.linkUrl) {
@@ -70,7 +72,7 @@ ext.contextMenus?.onClicked.addListener(async (info, tab) => {
     if (hasSidePanel && tab && tab.windowId !== undefined) {
       await ext.sidePanel.open({ windowId: tab.windowId });
     } else if (hasSidebar) {
-      await ext.sidebarAction.open();
+      await ext.sidebarAction?.open();
     }
     // Safari: cannot programmatically open the popup; the stashed text is
     // prefilled the next time the user opens it.

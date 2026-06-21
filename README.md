@@ -92,61 +92,20 @@ Every chat message is tagged with the **engine + exact model**, app version, and
 
 ---
 
-## Verifying it works (test matrix)
+## Testing
 
-Target coverage: **4 browsers × 3 OSes = 12 environments**. Safari is macOS-only, so its Windows/Linux cells are **N/A** (10 real environments).
+Run the automated baseline from `extension/`:
 
-### How to load per browser
-- **Chrome / Edge:** `chrome://extensions` (or `edge://extensions`) → Developer mode → **Load unpacked** → `extension/build/chrome`.
-- **Firefox:** `about:debugging` → This Firefox → **Load Temporary Add-on** → `extension/build/firefox/manifest.json` (WebGPU needs **Firefox 141+**).
-- **Safari (macOS):** open the generated Xcode project (`extension/build/safari-xcode/…`), set your signing Team, Run, then enable it in Safari ▸ Settings ▸ Extensions.
+```bash
+npm run typecheck     # strict TypeScript check (tsc --noEmit)
+npm run test:all      # typecheck + build + automated tests
+npm run test:coverage # Node test runner coverage report
+npm run audit:deps    # dependency vulnerability audit
+```
 
-### Per-environment checklist (what a ✅ means)
-Run each in the target environment:
-1. **Loads** — extension installs with no manifest/CSP errors; side panel (or sidebar/popup) opens; Terms/Privacy gate appears and accepts.
-2. **In-browser model** — load **Recommended (Qwen2.5-3B)**; it downloads/caches; **Analyze** a known phishing sample returns a sensible verdict; **Chat** replies.
-3. **Voice** — enable **🔊 Speak replies**; voice downloads once and speaks; panel stays scrollable while speaking.
-4. **Ollama** (if installed) — **Advanced → Refresh models → Connect** succeeds; analysis + chat work; assistant messages show the **⚠ External model** badge.
-5. **Polish** — dark mode toggles; selected-text/right-click analysis works; provenance **Export** downloads a record.
+See `docs/testing.md` for automated coverage areas, current coverage snapshot, release gates, and the full manual browser/OS matrix.
 
-### Status
-
-Legend: ✅ pass · ⬜ not tested · ❌ fail · N/A not applicable
-
-| Environment | Loads | In-browser | Voice | Ollama |
-|---|---|---|---|---|
-| **Chrome — macOS** | ✅ | ✅ | ✅ | ✅ |
-| **Chrome — Windows** | ⬜ | ⬜ | ⬜ | ⬜ |
-| **Chrome — Linux** | ⬜ | ⬜ | ⬜ | ⬜ |
-| **Edge — macOS** | ⬜ | ⬜ | ⬜ | ⬜ |
-| **Edge — Windows** | ⬜ | ⬜ | ⬜ | ⬜ |
-| **Edge — Linux** | ⬜ | ⬜ | ⬜ | ⬜ |
-| **Firefox — macOS** | ⬜ | ⬜ | ⬜ | ⬜ |
-| **Firefox — Windows** | ⬜ | ⬜ | ⬜ | ⬜ |
-| **Firefox — Linux** | ⬜ | ⬜ | ⬜ | ⬜ |
-| **Safari — macOS** | ⬜ | ⬜ | ⬜ | ⬜ |
-| **Safari — Windows** | N/A | N/A | N/A | N/A |
-| **Safari — Linux** | N/A | N/A | N/A | N/A |
-
-**Known per-environment caveats**
-- **WebGPU** (needed only for the *in-browser* model, not Ollama): Chrome/Edge broad; **Firefox 141+**; **Safari 26+ / recent macOS**. Where WebGPU is unavailable, the **Ollama** path still works.
-- **Firefox** uses a sidebar (`sidebar_action`) instead of the side panel; voice/ONNX under MV3 is the most likely failure point — note any console errors.
-- **Safari** must be built via Xcode and uses a popup (no side-panel API); requires an Apple Developer signing identity.
-- **Ollama** needs the one-time `OLLAMA_ORIGINS` setup (the in-app **Advanced** card shows OS-specific steps).
-
-### Linux distros
-
-The **extension itself is distro-agnostic** — it runs in the browser, so a single mainstream distro (e.g. Ubuntu) verifies the in-browser path. Whether the in-browser model works depends on the machine's **GPU driver / WebGPU support** (Mesa version), not the distro family; if WebGPU is unavailable, use Ollama.
-
-The only Linux-variable part is the **Ollama `OLLAMA_ORIGINS` setup**, which depends on the **init system**, not the distro per se. Verify the setup once per init family:
-
-| Linux family | Setup method | Verified |
-|---|---|---|
-| **systemd** — Debian/Ubuntu, Fedora/RHEL, Arch, openSUSE | systemd drop-in override (the in-app command) | ⬜ |
-| **NixOS** | `services.ollama.environmentVariables.OLLAMA_ORIGINS = "chrome-extension://<your-id>";` in `configuration.nix` → `nixos-rebuild switch` | ⬜ |
-| **Gentoo / non-systemd (OpenRC), or manual** | stop Ollama, then `OLLAMA_ORIGINS="chrome-extension://<your-id>" ollama serve` | ⬜ |
-
-(The in-app **Advanced** card lists all three for Linux, since the extension can't detect the distro.)
+---
 
 ## Project structure
 
@@ -154,28 +113,35 @@ The only Linux-variable part is the **Ollama `OLLAMA_ORIGINS` setup**, which dep
 Fraud_detection_Tool/
 ├── README.md
 ├── BROWSER_EXTENSION_GUIDE.md
+├── docs/
+│   └── testing.md            # automated coverage, release gates, browser matrix
 └── extension/
     ├── manifest.json          # MV3 (side panel, activeTab+scripting, CSP, host perms)
-    ├── package.json           # deps + build/vendor/package scripts
-    ├── build.js               # esbuild bundler (+ node-builtin stubs)
+    ├── package.json           # deps + build/vendor/package/typecheck scripts
+    ├── tsconfig.json          # strict TypeScript config (tsc --noEmit gate)
+    ├── build.js               # esbuild bundler — sidepanel + background (+ node stubs)
     ├── vendor.js              # copies ONNX/Piper runtimes into assets/
     ├── package-targets.js     # emits build/chrome|firefox|safari
-    ├── background.js          # side panel/sidebar, context menus
     ├── sidepanel.html / .css  # UI
-    ├── src/
-    │   ├── sidepanel.js       # model load (WebLLM/Ollama), analysis, library
-    │   ├── prompts.js         # system prompt, few-shot, JSON schema
-    │   ├── ollamaEngine.js    # Ollama adapter (OpenAI-shaped)
-    │   ├── ragStore.js        # IndexedDB: example library + conversations + embeddings
-    │   ├── chatPanel.js       # streaming chat + TTS pipeline + provenance
-    │   ├── ttsService.js      # Kokoro + Piper voices
-    │   ├── settings.js        # theme, voice/language, support link
-    │   ├── provenance.js      # message sealing / integrity hashing
-    │   └── legal.js           # Terms/Privacy + acceptance gate
+    ├── src/                   # TypeScript sources (strict)
+    │   ├── sidepanel.ts       # model load (WebLLM/Ollama), analysis, library
+    │   ├── background.ts      # MV3 worker: side panel/sidebar, context menus
+    │   ├── types.ts           # shared types incl. the ChatEngine contract
+    │   ├── shims.d.ts         # ambient browser globals (SpeechRecognition, browser)
+    │   ├── prompts.ts         # system prompt, few-shot, JSON schema
+    │   ├── ollamaEngine.ts    # Ollama adapter (conforms to ChatEngine)
+    │   ├── ragStore.ts        # IndexedDB: example library + conversations + embeddings
+    │   ├── chatPanel.ts       # streaming chat + TTS pipeline + provenance
+    │   ├── ttsService.ts      # Kokoro + Piper voices
+    │   ├── settings.ts        # theme, voice/language, support link
+    │   ├── provenance.ts      # message sealing / integrity hashing
+    │   └── legal.ts           # Terms/Privacy + acceptance gate
     ├── assets/                # vendored ONNX/Piper runtimes (generated)
-    ├── dist/                  # bundle (generated)
+    ├── dist/                  # bundles: sidepanel + background (generated)
     └── build/                 # per-browser packages (generated)
 ```
+
+The app is written in **strict TypeScript**; `npm run typecheck` (`tsc --noEmit`) is part of `npm run test:all`. esbuild bundles `src/sidepanel.ts` → `dist/sidepanel.bundle.js` and `src/background.ts` → `dist/background.js`.
 
 ---
 

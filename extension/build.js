@@ -40,12 +40,8 @@ const stubNodeBuiltins = {
   },
 };
 
-/** @type {import('esbuild').BuildOptions} */
-const options = {
-  entryPoints: ['src/sidepanel.js'],
-  outfile: 'dist/sidepanel.bundle.js',
+const shared = {
   bundle: true,
-  format: 'esm',
   target: 'es2022',
   platform: 'browser',
   plugins: [stubNodeBuiltins],
@@ -55,11 +51,30 @@ const options = {
   logLevel: 'info',
 };
 
+/** Side panel page bundle (ES module). */
+const sidepanelOptions = {
+  ...shared,
+  entryPoints: ['src/sidepanel.ts'],
+  outfile: 'dist/sidepanel.bundle.js',
+  format: 'esm',
+};
+
+/** MV3 background service worker (classic script — no ESM in workers everywhere). */
+const backgroundOptions = {
+  ...shared,
+  entryPoints: ['src/background.ts'],
+  outfile: 'dist/background.js',
+  format: 'iife',
+};
+
 if (watch) {
-  const ctx = await esbuild.context(options);
-  await ctx.watch();
+  const ctxs = await Promise.all([
+    esbuild.context(sidepanelOptions),
+    esbuild.context(backgroundOptions),
+  ]);
+  await Promise.all(ctxs.map((c) => c.watch()));
   console.log('👀 Watching for changes…');
 } else {
-  await esbuild.build(options);
-  console.log('✅ Built dist/sidepanel.bundle.js');
+  await Promise.all([esbuild.build(sidepanelOptions), esbuild.build(backgroundOptions)]);
+  console.log('✅ Built dist/sidepanel.bundle.js + dist/background.js');
 }

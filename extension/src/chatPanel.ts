@@ -8,9 +8,19 @@
  *   - Voice: Piper neural TTS (speak replies) + Web Speech API mic (speech-to-text).
  */
 
-import { ragStore } from './ragStore.js';
-import { ttsService } from './ttsService.js';
-import { sealMessage } from './provenance.js';
+import { ragStore } from './ragStore';
+import { ttsService } from './ttsService';
+import { sealMessage } from './provenance';
+import type {
+  ChatEngine,
+  ChatMessage,
+  ChatStreamChunk,
+  Conversation,
+  Message,
+  ModelInfo,
+  SpeakSession,
+  SpeechRecognitionLike,
+} from './types';
 
 const CHAT_SYSTEM_PROMPT = `You are PhishGuard, a friendly cybersecurity assistant inside a phishing-detection browser extension.
 You help the user understand suspicious emails, texts, links, and scams, explain phishing tactics, and give clear, practical safety advice.
@@ -26,54 +36,57 @@ const MAX_HISTORY_MESSAGES = 6; // sliding window of recent turns sent to the mo
 const CHUNK_TARGETS = [1, 100, 200];
 const RUNON_FLUSH = 400; // flush a run-on with no sentence end past this length
 
-let getEngine = null;
-let getModelInfo = null; // returns { engine, model, external, appVersion } for provenance
-let conversations = [];
-let currentId = null;
+let getEngine: (() => ChatEngine | null) | null = null;
+let getModelInfo: (() => ModelInfo) | null = null;
+let conversations: Conversation[] = [];
+let currentId: string | null = null;
 
 let ttsEnabled = false;
 let ttsLoading = false;
-let recognition = null;
+let recognition: SpeechRecognitionLike | null = null;
 let isListening = false;
-let hiddenMsg = null; // assistant message to hide until speech starts
+let hiddenMsg: Message | null = null; // assistant message to hide until speech starts
 let thinking = false; // show the thinking spinner
-let activeSpeak = null; // current streaming TTS session
+let activeSpeak: SpeakSession | null = null; // current streaming TTS session
 
-let c = {}; // cached DOM elements
+let c!: ReturnType<typeof cacheEls>; // cached DOM elements
 
-export function setupChatPanel(engineGetter, modelInfoGetter) {
+export function setupChatPanel(
+  engineGetter: () => ChatEngine | null,
+  modelInfoGetter: () => ModelInfo
+): void {
   getEngine = engineGetter;
   getModelInfo = modelInfoGetter;
-  cacheEls();
+  c = cacheEls();
   wireEvents();
   initSpeechRecognition();
   loadConversations();
 }
 
 /** Called by sidepanel.js once the analysis model has loaded. */
-export function onChatModelReady() {
+export function onChatModelReady(): void {
   c.chatInput.disabled = false;
   c.chatSendBtn.disabled = false;
   c.chatEmpty.textContent = 'Ask PhishGuard about a suspicious message, link, or scam.';
 }
 
 function cacheEls() {
-  c = {
-    section: document.getElementById('chatSection'),
-    newBtn: document.getElementById('chatNewBtn'),
-    exportBtn: document.getElementById('chatExportBtn'),
-    historyToggle: document.getElementById('chatHistoryToggle'),
-    historyList: document.getElementById('chatHistoryList'),
-    clearAllBtn: document.getElementById('chatClearAllBtn'),
-    messages: document.getElementById('chatMessages'),
-    chatEmpty: document.getElementById('chatEmpty'),
-    chatInput: document.getElementById('chatInput'),
-    chatSendBtn: document.getElementById('chatSendBtn'),
-    chatMicBtn: document.getElementById('chatMicBtn'),
-    speakToggle: document.getElementById('chatSpeakToggle'),
-    stopSpeakBtn: document.getElementById('chatStopSpeakBtn'),
-    voiceStatus: document.getElementById('chatVoiceStatus'),
-    recallInfo: document.getElementById('chatRecallInfo'),
+  return {
+    section: document.getElementById('chatSection') as HTMLElement,
+    newBtn: document.getElementById('chatNewBtn') as HTMLElement,
+    exportBtn: document.getElementById('chatExportBtn') as HTMLElement,
+    historyToggle: document.getElementById('chatHistoryToggle') as HTMLElement,
+    historyList: document.getElementById('chatHistoryList') as HTMLElement,
+    clearAllBtn: document.getElementById('chatClearAllBtn') as HTMLElement,
+    messages: document.getElementById('chatMessages') as HTMLElement,
+    chatEmpty: document.getElementById('chatEmpty') as HTMLElement,
+    chatInput: document.getElementById('chatInput') as HTMLTextAreaElement,
+    chatSendBtn: document.getElementById('chatSendBtn') as HTMLButtonElement,
+    chatMicBtn: document.getElementById('chatMicBtn') as HTMLElement,
+    speakToggle: document.getElementById('chatSpeakToggle') as HTMLInputElement,
+    stopSpeakBtn: document.getElementById('chatStopSpeakBtn') as HTMLElement,
+    voiceStatus: document.getElementById('chatVoiceStatus') as HTMLElement,
+    recallInfo: document.getElementById('chatRecallInfo') as HTMLElement,
   };
 }
 
@@ -112,12 +125,12 @@ async function loadConversations() {
   renderMessages();
 }
 
-function currentConversation() {
+function currentConversation(): Conversation | null {
   return conversations.find((cv) => cv.id === currentId) || null;
 }
 
 function newConversation() {
-  const conv = {
+  const conv: Conversation = {
     id: `${Date.now()}`,
     title: 'New chat',
     messages: [],
@@ -130,7 +143,7 @@ function newConversation() {
   renderMessages();
 }
 
-async function persist(conv) {
+async function persist(conv: Conversation) {
   conv.updatedAt = Date.now();
   try {
     await ragStore.saveConversation(JSON.parse(JSON.stringify(conv)));
@@ -139,7 +152,7 @@ async function persist(conv) {
   }
 }
 
-async function deleteConversation(id) {
+async function deleteConversation(id: string) {
   conversations = conversations.filter((cv) => cv.id !== id);
   if (currentId === id) currentId = conversations[0]?.id || null;
   try {
@@ -210,9 +223,9 @@ async function sendMessage() {
 
   c.chatInput.value = '';
   if (!currentConversation()) newConversation();
-  const conv = currentConversation();
+  const conv = currentConversation()!;
 
-  const userMsg = { role: 'user', content: text, timestamp: Date.now() };
+  const userMsg: Message = { role: 'user', content: text, timestamp: Date.now() };
   conv.messages.push(userMsg);
   await sealMessage(conv, userMsg, getModelInfo ? getModelInfo() : null);
   if (conv.messages.length === 1) {
@@ -253,7 +266,7 @@ async function sendMessage() {
       .slice(-MAX_HISTORY_MESSAGES)
       .map((m) => ({ role: m.role, content: m.content }));
 
-    const messages = [
+    const messages: ChatMessage[] = [
       { role: 'system', content: CHAT_SYSTEM_PROMPT + recallContext },
       ...history,
     ];
@@ -261,7 +274,7 @@ async function sendMessage() {
     const useVoice = ttsEnabled;
 
     // Placeholder assistant message we fill as tokens stream in.
-    const assistantMsg = { role: 'assistant', content: '', timestamp: Date.now() };
+    const assistantMsg: Message = { role: 'assistant', content: '', timestamp: Date.now() };
     conv.messages.push(assistantMsg);
 
     // Voice on: hide the text + show a thinking spinner until the first audio
@@ -306,18 +319,18 @@ async function sendMessage() {
     const flushChunk = () => {
       const c2 = pendingChunk.trim();
       if (c2) {
-        activeSpeak.push(c2);
+        activeSpeak?.push(c2);
         chunkIndex++;
       }
       pendingChunk = '';
     };
 
-    const stream = await engine.chat.completions.create({
+    const stream = (await engine.chat.completions.create({
       messages,
       temperature: 0.4,
       max_tokens: 800,
       stream: true,
-    });
+    })) as AsyncIterable<ChatStreamChunk>;
 
     for await (const chunk of stream) {
       const delta = chunk.choices?.[0]?.delta?.content || '';
@@ -365,7 +378,7 @@ async function sendMessage() {
     console.error('Chat error:', err);
     hiddenMsg = null;
     thinking = false;
-    const conv2 = currentConversation();
+    const conv2 = currentConversation()!;
     const last = conv2.messages[conv2.messages.length - 1];
     const errText = `Sorry, I hit an error: ${err?.message || String(err)}`;
     if (last && last.role === 'assistant' && !last.content) {
@@ -381,11 +394,11 @@ async function sendMessage() {
 }
 
 /** Pull complete sentences from a buffer, leaving the trailing partial behind. */
-function takeSentences(buf) {
-  const sentences = [];
+function takeSentences(buf: string): { sentences: string[]; rest: string } {
+  const sentences: string[] = [];
   const re = /[^.!?\n]*[.!?\n]+["')\]]*/g;
   let last = 0;
-  let m;
+  let m: RegExpExecArray | null;
   while ((m = re.exec(buf)) !== null) {
     const s = m[0].trim();
     if (s) sentences.push(s);
@@ -394,7 +407,7 @@ function takeSentences(buf) {
   return { sentences, rest: buf.slice(last) };
 }
 
-function setSending(sending) {
+function setSending(sending: boolean) {
   c.chatSendBtn.disabled = sending;
   c.chatSendBtn.textContent = sending ? 'Thinking…' : 'Send';
 }
@@ -503,7 +516,7 @@ function renderMessages() {
   c.messages.scrollTop = stick ? c.messages.scrollHeight : prevTop;
 }
 
-function showThinking(on) {
+function showThinking(on: boolean) {
   thinking = on;
   renderMessages();
 }

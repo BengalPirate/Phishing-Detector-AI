@@ -3,18 +3,19 @@
  * Persisted in chrome.storage.local.
  */
 
-import { ttsService, VOICE_CATALOG } from './ttsService.js';
+import { ttsService, VOICE_CATALOG } from './ttsService';
+import type { VoiceGroup } from './types';
 
 // Where the "Support the developer" button points.
 const SUPPORT_URL = 'https://buymeacoffee.com/brandonnewtondev';
 
 const DEFAULTS = { theme: 'light', voiceId: 'af_heart' };
 
-let settings = { ...DEFAULTS };
-let els = {};
+let settings: { theme: string; voiceId: string } = { ...DEFAULTS };
+let els!: ReturnType<typeof cacheEls>;
 
-export async function setupSettings() {
-  cacheEls();
+export async function setupSettings(): Promise<void> {
+  els = cacheEls();
   await load();
   applyTheme();
   ttsService.setVoice(settings.voiceId);
@@ -23,22 +24,22 @@ export async function setupSettings() {
 }
 
 function cacheEls() {
-  els = {
-    settingsBtn: document.getElementById('settingsBtn'),
-    settingsPanel: document.getElementById('settingsPanel'),
-    themeSelect: document.getElementById('themeSelect'),
-    langSelect: document.getElementById('langSelect'),
-    voiceSelect: document.getElementById('voiceSelect'),
-    supportBtn: document.getElementById('supportBtn'),
+  return {
+    settingsBtn: document.getElementById('settingsBtn') as HTMLElement,
+    settingsPanel: document.getElementById('settingsPanel') as HTMLElement,
+    themeSelect: document.getElementById('themeSelect') as HTMLSelectElement,
+    langSelect: document.getElementById('langSelect') as HTMLSelectElement,
+    voiceSelect: document.getElementById('voiceSelect') as HTMLSelectElement,
+    supportBtn: document.getElementById('supportBtn') as HTMLElement,
   };
 }
 
 /** Which language group holds the currently-selected voice. */
-function groupForVoice(voiceId) {
+function groupForVoice(voiceId: string): VoiceGroup {
   return VOICE_CATALOG.find((g) => g.voices.some((v) => v.id === voiceId)) || VOICE_CATALOG[0];
 }
 
-function populateVoiceControls() {
+function populateVoiceControls(): void {
   // Languages
   els.langSelect.innerHTML = '';
   for (const g of VOICE_CATALOG) {
@@ -52,7 +53,7 @@ function populateVoiceControls() {
   populateVoicesForLang(currentGroup.lang, settings.voiceId);
 }
 
-function populateVoicesForLang(lang, selectId) {
+function populateVoicesForLang(lang: string, selectId: string | null): void {
   const group = VOICE_CATALOG.find((g) => g.lang === lang) || VOICE_CATALOG[0];
   els.voiceSelect.innerHTML = '';
   for (const v of group.voices) {
@@ -62,7 +63,7 @@ function populateVoicesForLang(lang, selectId) {
     els.voiceSelect.appendChild(opt);
   }
   els.voiceSelect.value = group.voices.some((v) => v.id === selectId)
-    ? selectId
+    ? (selectId as string)
     : group.voices[0].id;
 }
 
@@ -116,7 +117,7 @@ function wireEvents() {
   document.addEventListener('click', (e) => {
     if (
       els.settingsPanel.style.display === 'block' &&
-      !els.settingsPanel.contains(e.target) &&
+      !els.settingsPanel.contains(e.target as Node) &&
       e.target !== els.settingsBtn
     ) {
       els.settingsPanel.style.display = 'none';
@@ -124,13 +125,13 @@ function wireEvents() {
   });
 }
 
-function togglePanel(e) {
+function togglePanel(e: Event): void {
   e.stopPropagation();
   const open = els.settingsPanel.style.display === 'block';
   els.settingsPanel.style.display = open ? 'none' : 'block';
 }
 
-async function selectVoice(voiceId) {
+async function selectVoice(voiceId: string): Promise<void> {
   // The new voice downloads on the next "Speak replies" use (on demand).
   settings.voiceId = voiceId;
   ttsService.setVoice(voiceId);

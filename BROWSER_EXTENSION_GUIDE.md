@@ -122,7 +122,7 @@ Right-click any link on a page → **Check Link for Phishing**. The side panel o
 ## How it works (under the hood)
 
 1. You paste or select a message in the side panel.
-2. `src/sidepanel.js` sends it to the locally-loaded WebLLM engine with the phishing-analysis prompt from `src/prompts.js`.
+2. `src/sidepanel.ts` sends it to the locally-loaded WebLLM (or Ollama) engine with the phishing-analysis prompt from `src/prompts.ts`.
 3. The model generates a **JSON-schema-constrained** verdict on your GPU via WebGPU.
 4. The result is rendered in the panel.
 
