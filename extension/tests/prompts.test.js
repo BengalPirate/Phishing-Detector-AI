@@ -90,6 +90,78 @@ test('extractJson returns cautious fallback on malformed model output', () => {
   assert.ok(parsed.red_flags.includes('Unable to parse analysis results'));
 });
 
+test('extractJson returns fallback when extracted brace block is invalid JSON', () => {
+  const parsed = extractJson('model said: { "risk_score": 92, broken } trailing text');
+
+  assert.equal(parsed.verdict, 'SUSPICIOUS');
+  assert.equal(parsed.risk_score, 50);
+  assert.equal(parsed.indicators.link_analysis, 'Unable to analyze');
+});
+
+test('extractJson preserves matching verdict bands', () => {
+  const parsed = extractJson(
+    JSON.stringify({
+      indicators: {
+        sender_analysis: 'Known sender',
+        urgency_tactics: 'None',
+        link_analysis: 'No links',
+        grammar_tone: 'Normal',
+        requested_action: 'None',
+      },
+      red_flags: [],
+      explanation: 'No meaningful phishing indicators.',
+      user_advice: 'No action needed.',
+      risk_score: 5,
+      verdict: 'SAFE',
+    })
+  );
+
+  assert.equal(parsed.verdict, 'SAFE');
+});
+
+test('extractJson maps mid-range scores to suspicious verdict', () => {
+  const parsed = extractJson(
+    JSON.stringify({
+      indicators: {
+        sender_analysis: 'Unknown sender',
+        urgency_tactics: 'Some urgency',
+        link_analysis: 'Unclear link',
+        grammar_tone: 'Generic',
+        requested_action: 'Verify account',
+      },
+      red_flags: ['generic verification request'],
+      explanation: 'Some concerning signals but not conclusive.',
+      user_advice: 'Verify through official channels.',
+      risk_score: 45,
+      verdict: 'SAFE',
+    })
+  );
+
+  assert.equal(parsed.verdict, 'SUSPICIOUS');
+});
+
+test('extractJson leaves verdict untouched when risk_score is not numeric', () => {
+  const parsed = extractJson(
+    JSON.stringify({
+      indicators: {
+        sender_analysis: 'Unknown',
+        urgency_tactics: 'Some',
+        link_analysis: 'Unknown',
+        grammar_tone: 'Generic',
+        requested_action: 'Verify',
+      },
+      red_flags: ['generic verification request'],
+      explanation: 'Needs review.',
+      user_advice: 'Verify through official channels.',
+      risk_score: 'not-a-number',
+      verdict: 'SUSPICIOUS',
+    })
+  );
+
+  assert.equal(parsed.verdict, 'SUSPICIOUS');
+  assert.equal(parsed.risk_score, 'not-a-number');
+});
+
 test('model accuracy prompt regression: canonical phishing examples stay high risk', () => {
   const phishingPrompt = buildUserPrompt(
     'URGENT: Your account will be suspended. Verify password at http://paypa1.tk/verify',

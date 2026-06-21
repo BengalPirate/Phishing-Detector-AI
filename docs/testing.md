@@ -93,11 +93,11 @@ The in-app **Advanced** card lists all three for Linux, since the extension cann
 
 Last verified locally:
 
-- `npm run test:all`: 26/26 passing.
-- `npm run test:coverage`: 97.80% line coverage across modules included in Node's coverage report.
+- `npm run test:all`: 44/44 passing.
+- `npm run test:coverage`: 100% line, branch, and function coverage across modules included in Node's coverage report.
 - `npm run audit:deps`: 0 high-severity vulnerabilities reported.
 
-Coverage currently includes `src/prompts.js`, `src/provenance.js`, and `src/ollamaEngine.js`. Browser-bound modules such as `sidepanel.js`, `chatPanel.js`, `settings.js`, `ttsService.js`, and `ragStore.js` are covered indirectly by static integration/security checks, not by runtime unit coverage.
+Coverage currently includes `src/prompts.ts`, `src/provenance.ts`, and `src/ollamaEngine.ts`. Browser-bound modules such as `sidepanel.ts`, `chatPanel.ts`, `settings.ts`, `ttsService.ts`, and `ragStore.ts` are covered indirectly by typecheck, build, static integration/security checks, and the Chrome/macOS manual matrix, not by runtime unit coverage.
 
 ## Release Gate Recommendation
 

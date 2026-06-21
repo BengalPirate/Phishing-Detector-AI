@@ -66,3 +66,42 @@ test('tampering with sealed content changes the recomputed integrity', async () 
 
   assert.notEqual(sealed.integrity, tamperedDigest);
 });
+
+test('sealMessage falls back to unknown provenance when model info is missing', async () => {
+  const conv = { messages: [{ role: 'assistant', content: 'Fallback answer' }] };
+
+  await sealMessage(conv, conv.messages[0], null);
+
+  assert.equal(conv.messages[0].provenance.engine, 'unknown');
+  assert.equal(conv.messages[0].provenance.model, 'unknown');
+  assert.equal(conv.messages[0].provenance.external, false);
+  assert.equal(conv.messages[0].provenance.appVersion, 'unknown');
+  assert.match(conv.messages[0].integrity, /^[a-f0-9]{64}$/);
+});
+
+test('sealMessage uses GENESIS when the previous message has no integrity', async () => {
+  const conv = {
+    messages: [
+      { role: 'user', content: 'Unsealed previous message' },
+      { role: 'assistant', content: 'Sealed response' },
+    ],
+  };
+
+  await sealMessage(conv, conv.messages[1], {
+    engine: '',
+    model: '',
+    external: false,
+    appVersion: '',
+  });
+
+  assert.equal(conv.messages[1].provenance.engine, 'unknown');
+  assert.equal(conv.messages[1].provenance.model, 'unknown');
+  assert.equal(conv.messages[1].provenance.appVersion, 'unknown');
+
+  const recomputed = await sha256Hex(
+    `GENESIS|${conv.messages[1].role}|${conv.messages[1].content}|${JSON.stringify(
+      conv.messages[1].provenance
+    )}`
+  );
+  assert.equal(conv.messages[1].integrity, recomputed);
+});
